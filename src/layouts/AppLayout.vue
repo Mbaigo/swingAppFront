@@ -38,12 +38,14 @@ import { RouterLink, RouterView } from 'vue-router'
     <!-- Conteneur principal (Header + Contenu) -->
     <div class="flex-1 flex flex-col overflow-hidden">
       <!-- Header (Barre supérieure) -->
-      <header class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm">
-        <h2 class="text-lg font-medium text-gray-800">Dashboard</h2>
+      <header
+        class="h-16 bg-slate-900 border-b border-slate-700 flex items-center justify-between px-6 shadow-sm"
+      >
+        <h2 class="text-lg font-medium text-white">Dashboard</h2>
         <div class="flex items-center space-x-4">
-          <span class="text-sm text-gray-600">Admin</span>
+          <span class="text-sm text-slate-300">Admin</span>
           <div
-            class="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 font-bold"
+            class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold"
           >
             A
           </div>
@@ -51,7 +53,7 @@ import { RouterLink, RouterView } from 'vue-router'
       </header>
 
       <!-- Zone de contenu dynamique -->
-      <main class="flex-1 overflow-x-hidden overflow-y-auto p-6">
+      <main class="flex-1 bg-slate-700 overflow-x-hidden overflow-y-auto p-6">
         <RouterView />
         <!-- C'est ici que les pages vont s'afficher -->
       </main>
