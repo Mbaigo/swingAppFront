@@ -1,21 +1,33 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { commandeService } from '@/services/commandeService'
-import type { Commande } from '@/models/commandeInterface'
 
-// État (State) de la page
+interface Commande {
+  id: number
+  dateCreation: string
+  dateLivraisonPrevue: string
+  statut: string
+  coutTotal: number
+  nomClient?: string
+}
+
+// --- VARIABLES D'ÉTAT ---
 const commandes = ref<Commande[]>([])
 const isLoading = ref(false)
 const currentPage = ref(0)
 const totalPages = ref(0)
 const totalElements = ref(0)
 
-// Fonction pour charger les données depuis l'API
+// Variables liées aux filtres (v-model)
+const searchQuery = ref('')
+const selectedStatut = ref('')
+
+// --- LOGIQUE API ---
 const chargerCommandes = async (page: number) => {
   isLoading.value = true
   try {
-    const response = await commandeService.getAllCommandes(page, 10)
-    // Spring Data JPA renvoie les données dans un objet "Page"
+    // Appelle le service en lui passant le statut actuel du menu déroulant
+    const response = await commandeService.getCommandesFiltrees(page, 10, selectedStatut.value)
     commandes.value = response.data.content
     totalPages.value = response.data.totalPages
     totalElements.value = response.data.totalElements
@@ -27,15 +39,26 @@ const chargerCommandes = async (page: number) => {
   }
 }
 
-// Fonction pour formater les dates (de "2026-08-15T14:30:00" à "15/08/2026")
+// ÉCOUTEUR : Si on change de statut dans le menu déroulant, on relance l'API (à la page 0)
+watch(selectedStatut, () => {
+  chargerCommandes(0)
+})
+
+// --- FILTRE LOCAL (Barre de recherche) ---
+// Filtre instantanément par ID les résultats déjà chargés en mémoire
+const commandesAffichees = computed(() => {
+  if (!searchQuery.value) return commandes.value
+
+  const query = searchQuery.value.toLowerCase()
+  return commandes.value.filter((commande) => commande.id.toString().includes(query))
+})
+
+// --- UTILITAIRES D'AFFICHAGE ---
 const formatDate = (dateString: string) => {
   if (!dateString) return '-'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('fr-FR')
+  return new Date(dateString).toLocaleDateString('fr-FR')
 }
 
-// Fonction utilitaire pour la couleur des badges
-// Fonction utilitaire pour la couleur des badges
 const getBadgeClass = (statut: string) => {
   switch (statut) {
     case 'CREEE':
@@ -53,7 +76,7 @@ const getBadgeClass = (statut: string) => {
   }
 }
 
-// Appel initial au montage
+// Initialisation
 onMounted(() => {
   chargerCommandes(0)
 })
@@ -74,19 +97,24 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- Filtres (Statiques pour le moment) -->
+    <!-- Filtres avec v-model connectés aux variables du script -->
     <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex gap-4">
       <input
+        v-model="searchQuery"
         type="text"
-        placeholder="Chercher une commande..."
+        placeholder="Chercher par ID (#)..."
         class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 w-64 outline-none focus:border-blue-500"
       />
+
       <select
+        v-model="selectedStatut"
         class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
       >
         <option value="">Tous les statuts</option>
-        <option value="EN_COURS">En cours</option>
-        <option value="PRETE">Prêtes</option>
+        <option value="CREEE">Créées</option>
+        <option value="EN_CONFECTION">En confection</option>
+        <option value="ESSAYAGE">Essayage</option>
+        <option value="TERMINEE">Terminées</option>
       </select>
     </div>
 
@@ -110,14 +138,15 @@ onMounted(() => {
                 Chargement en cours...
               </td>
             </tr>
-            <tr v-else-if="commandes.length === 0">
+            <tr v-else-if="commandesAffichees.length === 0">
               <td colspan="6" class="px-6 py-8 text-center text-slate-500">
-                Aucune commande trouvée.
+                Aucune commande ne correspond aux filtres.
               </td>
             </tr>
+            <!-- Boucle sur commandesAffichees pour que la recherche instantanée fonctionne -->
             <tr
               v-else
-              v-for="commande in commandes"
+              v-for="commande in commandesAffichees"
               :key="commande.id"
               class="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
             >
