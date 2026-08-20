@@ -1,3 +1,4 @@
+import type { Commande } from '@/types/commandeInterface'
 import { api } from './api'
 
 export const commandeService = {
@@ -9,5 +10,10 @@ export const commandeService = {
     }
     // Appel global
     return api.get(`/commandes?page=${page}&size=${size}`)
+  },
+
+  // 👈 Nouvelle méthode pour créer une commande
+  creerCommande(donnees: Commande) {
+    return api.post('/commandes', donnees)
   },
 }

@@ -1,15 +1,8 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { commandeService } from '@/services/commandeService'
-
-interface Commande {
-  id: number
-  dateCreation: string
-  dateLivraisonPrevue: string
-  statut: string
-  coutTotal: number
-  nomClient?: string
-}
+import Modal from '@/components/Modal.vue'
+import type { Commande } from '@/types/commandeInterface'
 
 // --- VARIABLES D'ÉTAT ---
 const commandes = ref<Commande[]>([])
@@ -76,6 +69,49 @@ const getBadgeClass = (statut: string) => {
   }
 }
 
+//Ajout de commande
+// --- GESTION DU MODAL ET FORMULAIRE ---
+const isModalOpen = ref(false)
+const isSubmitting = ref(false)
+
+// Modèle de données pour la nouvelle commande
+const nouvelleCommande = ref({
+  id: 0,
+  dateCreation: '',
+  dateLivraisonPrevue: '',
+  statut: '',
+  coutTotal: 0,
+  nomClient: undefined,
+})
+
+// Fonction de soumission
+const soumettreCommande = async () => {
+  isSubmitting.value = true
+  try {
+    // Appel au backend
+    await commandeService.creerCommande(nouvelleCommande.value)
+
+    // Ferme le modal et nettoie le formulaire
+    isModalOpen.value = false
+    nouvelleCommande.value = {
+      id: 0,
+      dateCreation: '',
+      dateLivraisonPrevue: '',
+      statut: '',
+      coutTotal: 0,
+      nomClient: undefined,
+    }
+
+    // Recharge la liste pour afficher la nouvelle commande
+    chargerCommandes(0)
+  } catch (error) {
+    console.error('Erreur lors de la création', error)
+    // Ici on pourrait ajouter une alerte/notification d'erreur
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
 // Initialisation
 onMounted(() => {
   chargerCommandes(0)
@@ -91,6 +127,7 @@ onMounted(() => {
         <p class="text-gray-400 text-sm">{{ totalElements }} commandes au total</p>
       </div>
       <button
+        @click="isModalOpen = true"
         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium text-sm flex items-center gap-2"
       >
         <span>+</span> Nouvelle Commande
@@ -200,5 +237,57 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Modal pour la création d'une nouvelle commande -->
+    <!-- MODAL DE CRÉATION DE COMMANDE -->
+    <Modal :isOpen="isModalOpen" title="Créer une nouvelle commande" @close="isModalOpen = false">
+      <!-- Contenu (Formulaire) -->
+      <form id="formCommande" @submit.prevent="soumettreCommande" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1"
+            >Date de livraison prévue</label
+          >
+          <input
+            v-model="nouvelleCommande.dateLivraisonPrevue"
+            type="datetime-local"
+            required
+            class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-1">Coût total (XAF)</label>
+          <input
+            v-model="nouvelleCommande.coutTotal"
+            type="number"
+            required
+            min="0"
+            class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <!-- Tu pourras ajouter un champ de sélection de Client ici plus tard -->
+      </form>
+
+      <!-- Pied de page (Boutons d'action via le slot "footer") -->
+      <template #footer>
+        <button
+          type="button"
+          @click="isModalOpen = false"
+          class="px-4 py-2 text-sm font-medium text-slate-300 bg-slate-700 border border-slate-600 rounded-lg hover:bg-slate-600 transition-colors"
+        >
+          Annuler
+        </button>
+        <button
+          type="submit"
+          form="formCommande"
+          :disabled="isSubmitting"
+          class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+        >
+          <span v-if="isSubmitting">Création...</span>
+          <span v-else>Enregistrer</span>
+        </button>
+      </template>
+    </Modal>
   </div>
 </template>
