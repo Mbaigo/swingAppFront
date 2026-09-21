@@ -1,0 +1,6 @@
+PDBe MCP provides
+PDBe API Server
+PDBe Search Server
+PDBe Graph Server
+Connecting an AI assistant to PDBe (two servers are enough to get)
+github: PDBeurope/PDBe-MCP-servers

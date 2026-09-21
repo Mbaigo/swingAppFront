@@ -7,28 +7,36 @@ import { RouterLink, RouterView } from 'vue-router'
     <!-- Sidebar (Menu latéral) -->
     <aside class="w-64 bg-slate-900 text-white flex flex-col">
       <div class="h-16 flex items-center justify-center border-b border-slate-700">
-        <h1 class="text-xl font-bold tracking-wider">✂️ SPE FASHION</h1>
+        <h1 class="text-xl font-bold tracking-wider">🧵 Lex-fashion</h1>
+        <!--<h1 class="text-xl font-bold tracking-wider">✂️ Lex-fashion</h1>-->
       </div>
       <nav class="flex-1 p-4 space-y-2">
-        <!-- active-class permet de styliser le lien de la page actuelle -->
+        <!-- exact-active-class permet de styliser le lien de la page actuelle -->
         <RouterLink
           to="/"
           class="block px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors"
-          active-class="bg-blue-600 hover:bg-blue-600 text-white"
+          exact-active-class="bg-blue-600 hover:bg-blue-600 text-white"
         >
           Tableau de bord
         </RouterLink>
         <RouterLink
           to="/commandes"
           class="block px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors"
-          active-class="bg-blue-600 hover:bg-blue-600 text-white"
+          exact-active-class="bg-blue-600 hover:bg-blue-600 text-white"
         >
           Commandes
         </RouterLink>
         <RouterLink
+          to="/rendez-vous"
+          class="block px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors"
+          exact-active-class="bg-blue-600 hover:bg-blue-600 text-white"
+        >
+          Rendez-vous
+        </RouterLink>
+        <RouterLink
           to="/clients"
           class="block px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors"
-          active-class="bg-blue-600 hover:bg-blue-600 text-white"
+          exact-active-class="bg-blue-600 hover:bg-blue-600 text-white"
         >
           Clients
         </RouterLink>
