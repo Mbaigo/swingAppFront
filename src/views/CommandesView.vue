@@ -4,8 +4,8 @@ import { commandeService } from '@/services/commandeService'
 import { clientService } from '@/services/clientService'
 import Modal from '@/components/Modal.vue'
 
-// Import de tes interfaces (ajuste le chemin si nécessaire)
-import type { Commande } from '@/types/commandeInterface'
+// Assure-toi que ces types correspondent à ce qui est dans ton fichier commandeInterface.ts
+import type { Commande, CommandeRequest, LigneCommandeRequest } from '@/types/commandeInterface'
 import type { ClientResponseDTO } from '@/types/clientInterface'
 
 // --- VARIABLES D'ÉTAT ---
@@ -31,10 +31,33 @@ const selectedCommande = ref<Commande | null>(null)
 
 // Modèle de données pour le formulaire (Création / Édition)
 const commandeForm = ref({
-  dateLivraisonPrevue: '',
-  coutTotal: 0,
   clientId: '' as number | '',
+  dateLivraison: '',
+  lignes: [] as LigneCommandeRequest[],
   statut: 'CREEE',
+})
+
+// --- GESTION DYNAMIQUE DES LIGNES ---
+const ajouterLigne = () => {
+  commandeForm.value.lignes.push({
+    nomMaquette: '',
+    imagesUrl: [],
+    quantite: 1,
+    prixConfection: 0,
+  })
+}
+
+const supprimerLigne = (index: number) => {
+  if (commandeForm.value.lignes.length > 1) {
+    commandeForm.value.lignes.splice(index, 1)
+  }
+}
+
+// Calcul automatique du total pour l'affichage UI
+const totalEstime = computed(() => {
+  return commandeForm.value.lignes.reduce((total, ligne) => {
+    return total + (ligne.quantite || 0) * (ligne.prixConfection || 0)
+  }, 0)
 })
 
 // --- LOGIQUE API ---
@@ -75,7 +98,14 @@ watch(selectedStatut, () => {
 const ouvrirModalCreation = () => {
   isEditMode.value = false
   currentCommandeId.value = null
-  commandeForm.value = { dateLivraisonPrevue: '', coutTotal: 0, clientId: '', statut: 'CREEE' }
+
+  // On réinitialise avec 1 ligne par défaut
+  commandeForm.value = {
+    clientId: '',
+    dateLivraison: '',
+    lignes: [{ nomMaquette: '', imagesUrl: [], quantite: 1, prixConfection: 0 }],
+    statut: 'CREEE',
+  }
   isModalOpen.value = true
 }
 
@@ -83,16 +113,17 @@ const ouvrirModalEdition = (commande: Commande) => {
   isEditMode.value = true
   currentCommandeId.value = commande.id
 
-  // L'input datetime-local de HTML5 attend un format YYYY-MM-DDTHH:mm (sans les secondes)
-  const dateFormatee = commande.dateLivraisonPrevue ? commande.dateLivraisonPrevue.slice(0, 16) : ''
+  // On extrait juste la partie YYYY-MM-DD pour l'input type="date"
+  const dateFormatee = commande.dateLivraison ? commande.dateLivraison.slice(0, 10) : ''
 
   commandeForm.value = {
-    dateLivraisonPrevue: dateFormatee,
-    coutTotal: commande.coutTotal,
-    // Note: Si ton backend renvoie le clientId dans la réponse de la commande,
-    // tu pourrais le pré-remplir ici (ex: commande.clientId || '').
-    // Sinon, on oblige l'utilisateur à le resélectionner.
-    clientId: '',
+    // 👈 ICI : On pré-remplit avec l'ID du client existant
+    clientId: commande.client ? commande.client.id : '',
+    dateLivraison: dateFormatee,
+    // Si ton backend renvoie les lignes existantes, mets-les ici, sinon crée une ligne par défaut
+    lignes: (commande as any).lignes
+      ? JSON.parse(JSON.stringify((commande as any).lignes))
+      : [{ nomMaquette: '', imagesUrl: [], quantite: 1, prixConfection: commande.coutTotal || 0 }],
     statut: commande.statut,
   }
   isModalOpen.value = true
@@ -108,10 +139,8 @@ const soumettreCommande = async () => {
   isSubmitting.value = true
   try {
     if (isEditMode.value && currentCommandeId.value) {
-      // Si on est en mode édition, on appelle le PUT
       await commandeService.updateCommande(currentCommandeId.value, commandeForm.value)
     } else {
-      // Sinon on crée avec un POST
       await commandeService.creerCommande(commandeForm.value)
     }
 
@@ -127,7 +156,6 @@ const soumettreCommande = async () => {
 // --- FILTRE LOCAL (Barre de recherche) ---
 const commandesAffichees = computed(() => {
   if (!searchQuery.value) return commandes.value
-
   const query = searchQuery.value.toLowerCase()
   return commandes.value.filter((commande) => commande.id.toString().includes(query))
 })
@@ -139,8 +167,6 @@ const formatDate = (dateString: string) => {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   })
 }
 
@@ -238,8 +264,8 @@ onMounted(() => {
               class="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
             >
               <td class="px-6 py-4 font-medium text-white">#{{ commande.id }}</td>
-              <td class="px-6 py-4">{{ formatDate(commande.dateCreation) }}</td>
-              <td class="px-6 py-4">{{ formatDate(commande.dateLivraisonPrevue) }}</td>
+              <td class="px-6 py-4">{{ formatDate(commande.dateCommande) }}</td>
+              <td class="px-6 py-4">{{ formatDate(commande.dateLivraison) }}</td>
               <td class="px-6 py-4 font-medium text-white">{{ commande.coutTotal }} XAF</td>
               <td class="px-6 py-4">
                 <span
@@ -279,14 +305,14 @@ onMounted(() => {
           <button
             @click="chargerCommandes(currentPage - 1)"
             :disabled="currentPage === 0 || isLoading"
-            class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50 transition-colors"
           >
             Précédent
           </button>
           <button
             @click="chargerCommandes(currentPage + 1)"
             :disabled="currentPage === totalPages - 1 || isLoading || totalPages === 0"
-            class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            class="px-3 py-1 bg-slate-700 rounded hover:bg-slate-600 disabled:opacity-50 transition-colors"
           >
             Suivant
           </button>
@@ -303,39 +329,36 @@ onMounted(() => {
       @close="isModalOpen = false"
     >
       <form id="formCommande" @submit.prevent="soumettreCommande" class="space-y-4">
-        <!-- Sélection du Client -->
-        <div>
-          <label class="block text-sm font-medium text-slate-300 mb-1">Client *</label>
-          <select
-            v-model="commandeForm.clientId"
-            required
-            class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
-          >
-            <option value="" disabled>Sélectionnez un client...</option>
-            <option v-for="client in clientsList" :key="client.id" :value="client.id">
-              {{ client.nom }} {{ client.prenom }} ({{ client.telephone }})
-            </option>
-          </select>
-        </div>
-
         <div class="grid grid-cols-2 gap-4">
+          <!-- Sélection du Client -->
+          <!-- Sélection du Client -->
+          <div>
+            <label class="block text-sm font-medium text-slate-300 mb-1">Client *</label>
+            <select
+              v-model="commandeForm.clientId"
+              required
+              :disabled="isEditMode"
+              :class="[
+                'w-full text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500 transition-colors',
+                isEditMode
+                  ? 'bg-slate-700/50 border border-slate-600 text-slate-400 cursor-not-allowed opacity-70'
+                  : 'bg-slate-700 border border-slate-600 text-white',
+              ]"
+            >
+              <option value="" disabled>Sélectionnez un client...</option>
+              <option v-for="client in clientsList" :key="client.id" :value="client.id">
+                {{ client.nom }} {{ client.prenom }} ({{ client.telephone }})
+              </option>
+            </select>
+          </div>
+
+          <!-- Date de Livraison -->
           <div>
             <label class="block text-sm font-medium text-slate-300 mb-1">Date de livraison *</label>
             <input
-              v-model="commandeForm.dateLivraisonPrevue"
-              type="datetime-local"
+              v-model="commandeForm.dateLivraison"
+              type="date"
               required
-              class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-slate-300 mb-1">Coût total (XAF) *</label>
-            <input
-              v-model="commandeForm.coutTotal"
-              type="number"
-              required
-              min="0"
               class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
             />
           </div>
@@ -355,6 +378,91 @@ onMounted(() => {
             <option value="TERMINEE">Terminée</option>
             <option value="ANNULEE">Annulée</option>
           </select>
+        </div>
+
+        <!-- SECTION : LIGNES DE COMMANDE -->
+        <div class="mt-6 pt-4 border-t border-slate-700">
+          <div class="flex justify-between items-center mb-3">
+            <h4 class="text-sm font-semibold text-white uppercase tracking-wider">
+              Articles à confectionner
+            </h4>
+            <span
+              class="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded border border-emerald-400/20"
+            >
+              Total estimé : {{ totalEstime }} XAF
+            </span>
+          </div>
+
+          <!-- Boucle sur les lignes -->
+          <div
+            v-for="(ligne, index) in commandeForm.lignes"
+            :key="index"
+            class="bg-slate-900/50 p-3 rounded-lg border border-slate-700 mb-3 relative group"
+          >
+            <!-- Bouton de suppression de ligne -->
+            <button
+              v-if="commandeForm.lignes.length > 1"
+              @click.prevent="supprimerLigne(index)"
+              class="absolute top-2 right-2 text-slate-500 hover:text-red-400 transition-colors opacity-50 group-hover:opacity-100"
+              title="Retirer cet article"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                ></path>
+              </svg>
+            </button>
+
+            <div class="grid grid-cols-12 gap-3 mt-2">
+              <div class="col-span-12 sm:col-span-6">
+                <label class="block text-xs font-medium text-slate-400 mb-1"
+                  >Nom de la maquette / Modèle *</label
+                >
+                <input
+                  v-model="ligne.nomMaquette"
+                  type="text"
+                  required
+                  placeholder="Ex: Robe de soirée"
+                  class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div class="col-span-6 sm:col-span-2">
+                <label class="block text-xs font-medium text-slate-400 mb-1">Quantité *</label>
+                <input
+                  v-model="ligne.quantite"
+                  type="number"
+                  required
+                  min="1"
+                  class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div class="col-span-6 sm:col-span-4">
+                <label class="block text-xs font-medium text-slate-400 mb-1"
+                  >Prix unitaire (XAF) *</label
+                >
+                <input
+                  v-model="ligne.prixConfection"
+                  type="number"
+                  required
+                  min="0"
+                  class="w-full bg-slate-800 border border-slate-600 text-white text-sm rounded-lg px-3 py-1.5 outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Bouton Ajouter une ligne -->
+          <button
+            @click.prevent="ajouterLigne"
+            class="text-sm text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 mt-2"
+          >
+            <span class="text-lg font-bold">+</span> Ajouter un autre article
+          </button>
         </div>
       </form>
 
@@ -409,7 +517,6 @@ onMounted(() => {
         >
           <div>
             <span class="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</span>
-            <!-- Affiche le nom s'il existe dans le DTO, sinon fallback -->
             <span class="text-white font-medium">{{
               selectedCommande.nomClient || 'ID Client non fourni'
             }}</span>
