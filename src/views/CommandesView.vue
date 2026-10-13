@@ -498,7 +498,7 @@ onMounted(() => {
           <div>
             <h3 class="text-2xl font-bold text-white">Commande #{{ selectedCommande.id }}</h3>
             <p class="text-slate-400 text-sm">
-              Créée le {{ formatDate(selectedCommande.dateCreation) }}
+              Créée le {{ formatDate(selectedCommande.dateCommande) }}
             </p>
           </div>
           <span
@@ -518,14 +518,20 @@ onMounted(() => {
           <div>
             <span class="block text-xs font-semibold text-slate-500 uppercase mb-1">Client</span>
             <span class="text-white font-medium">{{
-              selectedCommande.nomClient || 'ID Client non fourni'
+              selectedCommande.client?.prenom || 'ID Client non fourni'
+            }}</span>
+          </div>
+          <div>
+            <span class="block text-xs font-semibold text-slate-500 uppercase mb-1">Téléphone</span>
+            <span class="text-white font-medium">{{
+              selectedCommande.client?.telephone || 'ID Client non fourni'
             }}</span>
           </div>
           <div>
             <span class="block text-xs font-semibold text-slate-500 uppercase mb-1"
               >Livraison prévue</span
             >
-            <span class="text-white">{{ formatDate(selectedCommande.dateLivraisonPrevue) }}</span>
+            <span class="text-white">{{ formatDate(selectedCommande.dateLivraison) }}</span>
           </div>
           <div>
             <span class="block text-xs font-semibold text-slate-500 uppercase mb-1"
