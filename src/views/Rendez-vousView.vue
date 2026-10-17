@@ -167,8 +167,8 @@ onMounted(() => {
         <table class="w-full text-left text-sm text-gray-300">
           <thead class="bg-slate-900/50 text-gray-400 uppercase text-xs font-semibold">
             <tr>
-              <th scope="col" class="px-6 py-4">Commande</th>
-              <th scope="col" class="px-6 py-4">Client</th>
+              <th scope="col" class="px-6 py-4">Téléphone</th>
+              <th scope="col" class="px-6 py-4">Nom et Prenom</th>
               <th scope="col" class="px-6 py-4 text-blue-300">Date Prévue</th>
               <th scope="col" class="px-6 py-4">Statut actuel</th>
               <th scope="col" class="px-6 py-4 text-right">Actions</th>
@@ -195,7 +195,7 @@ onMounted(() => {
               class="border-b border-slate-700 hover:bg-slate-700/50 transition-colors"
             >
               <td class="px-6 py-4 font-medium text-emerald-400 capitalize">
-                {{ formatDate(commande.dateCreation) }}
+                {{ commande.client?.telephone }}
               </td>
               <td class="px-6 py-4">
                 {{

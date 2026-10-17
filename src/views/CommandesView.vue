@@ -5,7 +5,7 @@ import { clientService } from '@/services/clientService'
 import Modal from '@/components/Modal.vue'
 
 // Assure-toi que ces types correspondent à ce qui est dans ton fichier commandeInterface.ts
-import type { Commande, CommandeRequest, LigneCommandeRequest } from '@/types/commandeInterface'
+import type { Commande, LigneCommandeRequest } from '@/types/commandeInterface'
 import type { ClientResponseDTO } from '@/types/clientInterface'
 
 // --- VARIABLES D'ÉTAT ---
@@ -28,6 +28,29 @@ const isSubmitting = ref(false)
 const isEditMode = ref(false)
 const currentCommandeId = ref<number | null>(null)
 const selectedCommande = ref<Commande | null>(null)
+
+//--- GESTION DU STATUT DE COMMANDE----
+// Sous tes variables d'état (vers la ligne 25)
+const statutInitial = ref<string>('')
+
+// Propriété qui calcule les statuts autorisés selon l'état de la commande
+const statutsDisponibles = computed(() => {
+  if (!isEditMode.value) return ['CREEE'] // En création, seul CREEE est possible
+
+  const actuel = statutInitial.value
+
+  // L'annulation n'est désormais proposée que si on est au stade CREEE
+  if (actuel === 'CREEE') return ['CREEE', 'EN_CONFECTION', 'ANNULEE']
+
+  // Pour les étapes suivantes, l'option d'annulation a disparu
+  if (actuel === 'EN_CONFECTION') return ['EN_CONFECTION', 'ESSAYAGE']
+  if (actuel === 'ESSAYAGE') return ['ESSAYAGE', 'TERMINEE']
+
+  if (actuel === 'TERMINEE') return ['TERMINEE']
+  if (actuel === 'ANNULEE') return ['ANNULEE']
+
+  return [actuel]
+})
 
 // Modèle de données pour le formulaire (Création / Édition)
 const commandeForm = ref({
@@ -112,6 +135,8 @@ const ouvrirModalCreation = () => {
 const ouvrirModalEdition = (commande: Commande) => {
   isEditMode.value = true
   currentCommandeId.value = commande.id
+  // 👈 NOUVEAU : On sauvegarde le statut de départ pour la logique restrictive
+  statutInitial.value = commande.statut
 
   // On extrait juste la partie YYYY-MM-DD pour l'input type="date"
   const dateFormatee = commande.dateLivraison ? commande.dateLivraison.slice(0, 10) : ''
@@ -370,15 +395,25 @@ onMounted(() => {
           <select
             v-model="commandeForm.statut"
             required
-            class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500"
+            :disabled="statutInitial === 'TERMINEE' || statutInitial === 'ANNULEE'"
+            class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-4 py-2 outline-none focus:border-blue-500 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <option value="CREEE">Créée</option>
-            <option value="EN_CONFECTION">En confection</option>
-            <option value="ESSAYAGE">Essayage</option>
-            <option value="TERMINEE">Terminée</option>
-            <option value="ANNULEE">Annulée</option>
+            <option v-if="statutsDisponibles.includes('CREEE')" value="CREEE">Créée</option>
+            <option v-if="statutsDisponibles.includes('EN_CONFECTION')" value="EN_CONFECTION">
+              Passer en confection
+            </option>
+            <option v-if="statutsDisponibles.includes('ESSAYAGE')" value="ESSAYAGE">
+              Prêt pour essayage
+            </option>
+            <option v-if="statutsDisponibles.includes('TERMINEE')" value="TERMINEE">
+              Marquer comme terminée
+            </option>
+            <option v-if="statutsDisponibles.includes('ANNULEE')" value="ANNULEE">
+              Annuler la commande
+            </option>
           </select>
         </div>
+        <!-- SECTION : STATUTS DE LA COMMANDE -->
 
         <!-- SECTION : LIGNES DE COMMANDE -->
         <div class="mt-6 pt-4 border-t border-slate-700">
