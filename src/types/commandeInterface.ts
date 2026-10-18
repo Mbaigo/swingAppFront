@@ -23,6 +23,8 @@ export interface Commande {
     prenom: string
     telephone: string
   }
+
+  lignes?: LigneCommandeResponse[]
 }
 
 export interface LigneCommandeRequest {
@@ -30,6 +32,7 @@ export interface LigneCommandeRequest {
   imagesUrl: string[]
   quantite: number
   prixConfection: number
+  sousTotal?: number
 }
 
 export interface CommandeResponse {
@@ -38,4 +41,28 @@ export interface CommandeResponse {
   totalPages: number
   size: number
   number: number
+}
+
+export interface LigneCommandeResponse {
+  id?: number
+  nomMaquette: string
+  quantite: number
+  prixConfection: number
+  sousTotal?: number
+  imagesUrl?: string[] // Si tu renvoies les images
+}
+
+export interface Commande {
+  id: number
+  dateCommande: string
+  dateLivraison: string
+  statut: string
+  coutTotal: number
+  client?: {
+    id: number
+    nom: string
+    prenom: string
+    telephone: string
+  }
+  lignes?: LigneCommandeResponse[] // 👈 L'ajout crucial pour la vue détails
 }
