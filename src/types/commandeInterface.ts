@@ -29,7 +29,7 @@ export interface Commande {
 
 export interface LigneCommandeRequest {
   nomMaquette: string
-  imagesUrl: string[]
+  imageUrlMaquette: string[]
   quantite: number
   prixConfection: number
   sousTotal?: number

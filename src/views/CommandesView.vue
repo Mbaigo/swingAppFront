@@ -9,6 +9,38 @@ import Modal from '@/components/Modal.vue'
 import type { Commande } from '@/types/commandeInterface'
 import type { ClientResponseDTO } from '@/types/clientInterface'
 
+// --- GESTION DE LA VISIONNEUSE D'IMAGES (LIGHTBOX) ---
+const isImageViewerOpen = ref(false)
+const currentImageUrl = ref('')
+const zoomLevel = ref(1)
+
+// Ouvre la visionneuse avec l'URL cliquée
+const openImageViewer = (url: string) => {
+  currentImageUrl.value = url
+  zoomLevel.value = 1 // On remet le zoom à 100% par défaut
+  isImageViewerOpen.value = true
+}
+
+// Ferme la visionneuse
+const closeImageViewer = () => {
+  isImageViewerOpen.value = false
+  currentImageUrl.value = ''
+  zoomLevel.value = 1
+}
+
+// Contrôles de zoom
+const zoomIn = () => {
+  if (zoomLevel.value < 3) zoomLevel.value += 0.25 // Zoom maximum (300%)
+}
+
+const zoomOut = () => {
+  if (zoomLevel.value > 0.5) zoomLevel.value -= 0.25 // Zoom minimum (50%)
+}
+
+const resetZoom = () => {
+  zoomLevel.value = 1
+}
+
 // --- VARIABLES D'ÉTAT ---
 const commandes = ref<Commande[]>([])
 const clientsList = ref<ClientResponseDTO[]>([]) // Stocke les clients pour le select
@@ -196,54 +228,68 @@ const ouvrirModalEdition = (commande: Commande) => {
 }
 
 const ouvrirModalDetails = (commande: Commande) => {
+  console.log("🧐 [DEBUG] Clic sur 'Voir' - Commande complète :", commande)
+
+  if (commande.lignes && commande.lignes.length > 0) {
+    commande.lignes.forEach((ligne, index) => {
+      console.log(`🧐 [DEBUG] Ligne n°${index + 1} - nomMaquette :`, ligne.nomMaquette)
+      console.log(
+        `🧐 [DEBUG] Ligne n°${index + 1} - imagesUrl (Type: ${typeof ligne.imagesUrl}) :`,
+        ligne.imagesUrl,
+      )
+    })
+  } else {
+    console.warn(
+      "⚠️ [DEBUG] Le backend n'a renvoyé aucune ligne pour cette commande, ou le tableau 'lignes' est vide.",
+    )
+  }
+
   selectedCommande.value = commande
   isViewModalOpen.value = true
 }
 
 // --- SOUMISSION DU FORMULAIRE ---
 const soumettreCommande = async () => {
-  const soumettreCommande = async () => {
-    // 1. VALIDATION FRONTEND : Vérifier que chaque ligne a au moins 1 image
-    const ligneInvalide = commandeForm.value.lignes.find(
-      (l) => l.fichiers.length === 0 && l.imagesUrl.length === 0,
-    )
-    if (ligneInvalide) {
-      alert('Veuillez ajouter au moins une image pour chaque article.')
-      return
+  // 1. VALIDATION FRONTEND : Vérifier que chaque ligne a au moins 1 image
+  const ligneInvalide = commandeForm.value.lignes.find(
+    (l) => l.fichiers.length === 0 && l.imagesUrl.length === 0,
+  )
+  if (ligneInvalide) {
+    alert('Veuillez ajouter au moins une image pour chaque article.')
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    // 2. UPLOAD DES IMAGES LIGNE PAR LIGNE
+    for (const ligne of commandeForm.value.lignes) {
+      if (ligne.fichiers.length > 0) {
+        // 👈 APPEL AU NOUVEAU SERVICE ICI
+        const responseUpload = await fileUploadService.uploadImages(ligne.fichiers)
+
+        // On ajoute les nouvelles URLs reçues du backend aux URLs existantes
+        ligne.imagesUrl = [...ligne.imagesUrl, ...responseUpload.data]
+
+        // On vide les fichiers locaux et les miniatures pour libérer la mémoire
+        ligne.fichiers = []
+        ligne.previews.forEach((url) => URL.revokeObjectURL(url))
+        ligne.previews = []
+      }
     }
 
-    isSubmitting.value = true
-    try {
-      // 2. UPLOAD DES IMAGES LIGNE PAR LIGNE
-      for (const ligne of commandeForm.value.lignes) {
-        if (ligne.fichiers.length > 0) {
-          // 👈 APPEL AU NOUVEAU SERVICE ICI
-          const responseUpload = await fileUploadService.uploadImages(ligne.fichiers)
-
-          // On ajoute les nouvelles URLs reçues du backend aux URLs existantes
-          ligne.imagesUrl = [...ligne.imagesUrl, ...responseUpload.data]
-
-          // On vide les fichiers locaux et les miniatures pour libérer la mémoire
-          ligne.fichiers = []
-          ligne.previews.forEach((url) => URL.revokeObjectURL(url))
-          ligne.previews = []
-        }
-      }
-
-      // 3. ENVOI DE LA COMMANDE JSON GLOBALE
-      if (isEditMode.value && currentCommandeId.value) {
-        await commandeService.updateCommande(currentCommandeId.value, commandeForm.value)
-      } else {
-        await commandeService.creerCommande(commandeForm.value)
-      }
-
-      isModalOpen.value = false
-      chargerCommandes(currentPage.value)
-    } catch (error) {
-      console.error('Erreur lors de la sauvegarde', error)
-    } finally {
-      isSubmitting.value = false
+    // 3. ENVOI DE LA COMMANDE JSON GLOBALE
+    if (isEditMode.value && currentCommandeId.value) {
+      await commandeService.updateCommande(currentCommandeId.value, commandeForm.value)
+    } else {
+      await commandeService.creerCommande(commandeForm.value)
     }
+
+    isModalOpen.value = false
+    chargerCommandes(currentPage.value)
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde', error)
+  } finally {
+    isSubmitting.value = false
   }
 }
 
@@ -282,15 +328,41 @@ const getBadgeClass = (statut: string) => {
 }
 
 // Fonction pour générer l'URL complète de l'image
-const getImageUrl = (cheminRelatif: string) => {
-  if (!cheminRelatif) return ''
-  // Si c'est déjà une URL complète (ex: hébergée sur S3 ou un CDN externe), on la retourne telle quelle
-  if (cheminRelatif.startsWith('http')) return cheminRelatif
+const getImageUrl = (cheminRelatif: any) => {
+  console.log('🔍 [DEBUG] getImageUrl appelé avec la valeur :', cheminRelatif)
 
-  // Sinon, on concatène l'URL de base du backend
-  // Remplace par la variable d'environnement de ton API en production
+  if (!cheminRelatif) {
+    console.log("❌ [DEBUG] L'URL est vide ou null.")
+    return ''
+  }
+
+  // ⚠️ Erreur très fréquente : le backend renvoie un objet (ex: { id: 1, url: "/uploads/..." })
+  // au lieu d'une simple chaîne de caractères ("/uploads/...")
+  if (typeof cheminRelatif === 'object') {
+    console.error('❌ [DEBUG] Attention, cheminRelatif est un OBJET, pas un texte !', cheminRelatif)
+    // On tente de récupérer la propriété url si elle existe
+    cheminRelatif = cheminRelatif.url || cheminRelatif.imageUrl || ''
+  }
+
+  if (typeof cheminRelatif === 'string' && cheminRelatif.startsWith('http')) {
+    console.log("✅ [DEBUG] C'est déjà une URL absolue :", cheminRelatif)
+    return cheminRelatif
+  }
+
   const baseUrl = 'http://localhost:8088'
-  return `${baseUrl}${cheminRelatif}`
+  // On s'assure qu'il y a bien un "/" entre la baseUrl et le chemin
+  const slash = cheminRelatif.startsWith('/') ? '' : '/'
+  const finalUrl = `${baseUrl}${slash}${cheminRelatif}`
+
+  console.log('✅ [DEBUG] URL finale envoyée à la balise <img> :', finalUrl)
+  return finalUrl
+}
+
+// Extrait les images de la ligne, peu importe comment le backend les nomme
+const getImagesLigne = (ligne: any): string[] => {
+  const urls = ligne.imagesUrl || ligne.imageUrlMaquette
+  if (!urls) return []
+  return Array.isArray(urls) ? urls : [urls]
 }
 
 // Initialisation
@@ -754,6 +826,7 @@ onMounted(() => {
                   <th class="px-4 py-3 text-right">Sous-total</th>
                 </tr>
               </thead>
+
               <tbody class="divide-y divide-slate-700/50">
                 <tr v-if="!selectedCommande.lignes || selectedCommande.lignes.length === 0">
                   <td colspan="4" class="px-4 py-6 text-center text-slate-500 italic">
@@ -765,27 +838,37 @@ onMounted(() => {
                   :key="idx"
                   class="hover:bg-slate-700/30 transition-colors"
                 >
-                  <div
-                    v-if="ligne.imagesUrl && ligne.imagesUrl.length > 0"
-                    class="flex flex-wrap gap-2 mt-2"
-                  >
-                    <div
-                      v-for="(url, imgIdx) in ligne.imagesUrl"
-                      :key="imgIdx"
-                      class="relative group cursor-zoom-in"
-                    >
-                      <!-- On utilise notre fonction getImageUrl -->
-                      <img
-                        :src="getImageUrl(url)"
-                        alt="Maquette"
-                        class="w-12 h-12 object-cover rounded border border-slate-600 shadow-sm hover:scale-150 transition-transform duration-200 z-10"
-                      />
+                  <!-- 1ère Cellule : Nom du modèle + Images -->
+                  <td class="px-4 py-3">
+                    <span class="font-medium text-white block">{{ ligne.nomMaquette }}</span>
+
+                    <!-- 🚀 ON UTILISE NOTRE NOUVELLE FONCTION ICI -->
+                    <div v-if="getImagesLigne(ligne).length > 0" class="flex flex-wrap gap-2 mt-2">
+                      <div
+                        v-for="(url, imgIdx) in getImagesLigne(ligne)"
+                        :key="imgIdx"
+                        class="relative group cursor-zoom-in"
+                      >
+                        <!-- On utilise notre fonction openImageViewer -->
+                        <img
+                          :src="getImageUrl(url)"
+                          alt="Maquette"
+                          @click="openImageViewer(getImageUrl(url))"
+                          class="w-12 h-12 object-cover rounded border border-slate-600 shadow-sm hover:scale-110 transition-transform duration-200 z-10 cursor-pointer"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  </td>
+
+                  <!-- 2ème Cellule : Quantité -->
                   <td class="px-4 py-3 text-center text-slate-300">{{ ligne.quantite }}</td>
+
+                  <!-- 3ème Cellule : Prix Unitaire -->
                   <td class="px-4 py-3 text-right text-slate-400">
                     {{ ligne.prixConfection }} XAF
                   </td>
+
+                  <!-- 4ème Cellule : Sous-total -->
                   <td class="px-4 py-3 text-right font-medium text-white">
                     {{ ligne.sousTotal || ligne.quantite * ligne.prixConfection }} XAF
                   </td>
@@ -819,5 +902,97 @@ onMounted(() => {
         </button>
       </template>
     </Modal>
+  </div>
+
+  <!-- 3. VISIONNEUSE D'IMAGES EN PLEIN ÉCRAN (LIGHTBOX) -->
+  <div
+    v-if="isImageViewerOpen"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/95 backdrop-blur-sm"
+  >
+    <!-- Bouton Fermer (Croix en haut à droite) -->
+    <button
+      @click="closeImageViewer"
+      class="absolute top-6 right-6 text-slate-300 hover:text-white bg-slate-800 hover:bg-red-500 rounded-full p-2 transition-colors z-50 shadow-lg"
+    >
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M6 18L18 6M6 6l12 12"
+        ></path>
+      </svg>
+    </button>
+
+    <!-- Barre de contrôles de Zoom (En bas au centre) -->
+    <div
+      class="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-slate-800/90 px-6 py-3 rounded-full border border-slate-600 shadow-2xl z-50"
+    >
+      <!-- Zoom Arrière -->
+      <button
+        @click="zoomOut"
+        class="text-white hover:text-blue-400 p-1 transition-colors"
+        title="Zoom arrière"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"
+          ></path>
+        </svg>
+      </button>
+
+      <!-- Niveau de zoom (%) -->
+      <span class="text-slate-300 font-medium min-w-[3rem] text-center text-sm">
+        {{ Math.round(zoomLevel * 100) }}%
+      </span>
+
+      <!-- Zoom Avant -->
+      <button
+        @click="zoomIn"
+        class="text-white hover:text-blue-400 p-1 transition-colors"
+        title="Zoom avant"
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"
+          ></path>
+        </svg>
+      </button>
+
+      <div class="w-px h-6 bg-slate-600 mx-1"></div>
+
+      <!-- Réinitialiser le zoom -->
+      <button
+        @click="resetZoom"
+        class="text-white hover:text-blue-400 p-1 transition-colors"
+        title="Taille originale"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+          ></path>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Conteneur de l'image -->
+    <!-- Utilisation de overflow-auto pour pouvoir scroller si l'image est très zoomée -->
+    <div class="w-full h-full flex items-center justify-center overflow-auto p-4 custom-scrollbar">
+      <img
+        :src="currentImageUrl"
+        alt="Maquette agrandie"
+        class="max-w-full max-h-full object-contain transition-transform duration-300 ease-out shadow-2xl"
+        :style="{ transform: `scale(${zoomLevel})` }"
+      />
+    </div>
   </div>
 </template>
