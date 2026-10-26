@@ -4,7 +4,7 @@ import { fileUploadService } from '@/services/fileUploadService' // Ajout de l'i
 import { commandeService } from '@/services/commandeService'
 import { clientService } from '@/services/clientService'
 import Modal from '@/components/Modal.vue'
-
+import { paiementService } from '@/services/paiementService'
 // Assure-toi que ces types correspondent à ce qui est dans ton fichier commandeInterface.ts
 import type { Commande } from '@/types/commandeInterface'
 import type { ClientResponseDTO } from '@/types/clientInterface'
@@ -39,6 +39,55 @@ const zoomOut = () => {
 
 const resetZoom = () => {
   zoomLevel.value = 1
+}
+
+// --- GESTION DES PAIEMENTS ---
+const isPaiementLoading = ref(false)
+const isAjoutPaiementVisible = ref(false) // Permet d'afficher/masquer le formulaire
+
+const paiementForm = ref({
+  montant: 0,
+  modePaiement: 'ESPECES',
+  referenceTransaction: '',
+})
+
+// Prépare le formulaire avec le montant exact restant à payer
+const preparerNouveauPaiement = () => {
+  paiementForm.value = {
+    montant: selectedCommande.value?.resteAPayer || 0,
+    modePaiement: 'ESPECES',
+    referenceTransaction: '',
+  }
+  isAjoutPaiementVisible.value = true
+}
+
+// Soumet le paiement au backend
+const soumettrePaiement = async () => {
+  if (!selectedCommande.value || !paiementForm.value.montant || paiementForm.value.montant <= 0) {
+    alert('Veuillez saisir un montant valide.')
+    return
+  }
+
+  if (paiementForm.value.montant > (selectedCommande.value.resteAPayer || 0)) {
+    alert('Le montant saisi dépasse le reste à payer !')
+    return
+  }
+
+  isPaiementLoading.value = true
+  try {
+    await paiementService.ajouterPaiement(selectedCommande.value.id, paiementForm.value)
+
+    // Une fois réussi, on recharge la page pour avoir les nouvelles données
+    alert('Paiement enregistré avec succès !')
+    isAjoutPaiementVisible.value = false
+    isViewModalOpen.value = false // On ferme le modal
+    chargerCommandes(currentPage.value) // On rafraîchit la liste
+  } catch (error) {
+    console.error("Erreur lors de l'enregistrement du paiement", error)
+    alert("Impossible d'enregistrer le paiement.")
+  } finally {
+    isPaiementLoading.value = false
+  }
 }
 
 // --- VARIABLES D'ÉTAT ---
@@ -100,6 +149,7 @@ const commandeForm = ref({
   dateLivraison: '',
   lignes: [ligneParDefaut()],
   statut: 'CREEE',
+  resteAPayer: 0, // Pour l'affichage du reste à payer dans le modal de consultation
 })
 
 // --- GESTION DYNAMIQUE DES LIGNES ET IMAGES ---
@@ -223,6 +273,8 @@ const ouvrirModalEdition = (commande: Commande) => {
     dateLivraison: dateFormatee,
     lignes: lignesExistantes,
     statut: commande.statut,
+    coutTotal: commande.coutTotal,
+    resteAPayer: commande.resteAPayer !== undefined ? commande.resteAPayer : commande.coutTotal,
   }
   isModalOpen.value = true
 }
@@ -563,8 +615,13 @@ onMounted(() => {
             <option v-if="statutsDisponibles.includes('ESSAYAGE')" value="ESSAYAGE">
               Prêt pour essayage
             </option>
-            <option v-if="statutsDisponibles.includes('TERMINEE')" value="TERMINEE">
+            <option
+              v-if="statutsDisponibles.includes('TERMINEE')"
+              value="TERMINEE"
+              :disabled="commandeForm.resteAPayer > 0"
+            >
               Marquer comme terminée
+              {{ commandeForm.resteAPayer > 0 ? '(Paiement incomplet ⚠️)' : '' }}
             </option>
             <option v-if="statutsDisponibles.includes('ANNULEE')" value="ANNULEE">
               Annuler la commande
@@ -893,6 +950,166 @@ onMounted(() => {
         </div>
       </div>
 
+      <!-- 💰 SECTION FINANCIÈRE ET PAIEMENTS -->
+      <div class="mt-8 border-t border-slate-700 pt-6">
+        <h4 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+          <span>💳 État Financier</span>
+          <!-- Badge de statut de paiement -->
+          <span
+            v-if="selectedCommande?.statutPaiement === 'PAYE_TOTALEMENT'"
+            class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs px-2 py-0.5 rounded-full font-medium"
+            >Soldé</span
+          >
+          <span
+            v-else-if="selectedCommande?.statutPaiement === 'ACOMPTE'"
+            class="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs px-2 py-0.5 rounded-full font-medium"
+            >Acompte versé</span
+          >
+          <span
+            v-else
+            class="bg-red-500/20 text-red-400 border border-red-500/30 text-xs px-2 py-0.5 rounded-full font-medium"
+            >Impayé</span
+          >
+        </h4>
+
+        <!-- Récapitulatif Chiffré -->
+        <div class="grid grid-cols-3 gap-4 mb-6">
+          <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
+            <span class="block text-xs text-slate-400 mb-1">Total Commande</span>
+            <span class="text-lg font-bold text-white">{{ selectedCommande?.coutTotal }} XAF</span>
+          </div>
+          <div class="bg-slate-800 p-3 rounded-lg border border-emerald-900/50 text-center">
+            <span class="block text-xs text-slate-400 mb-1">Déjà Payé</span>
+            <span class="text-lg font-bold text-emerald-400"
+              >{{ selectedCommande?.montantPaye || 0 }} XAF</span
+            >
+          </div>
+          <div class="bg-slate-800 p-3 rounded-lg border border-amber-900/50 text-center">
+            <span class="block text-xs text-slate-400 mb-1">Reste à payer</span>
+            <span class="text-lg font-bold text-amber-400"
+              >{{
+                selectedCommande?.resteAPayer !== undefined
+                  ? selectedCommande.resteAPayer
+                  : selectedCommande?.coutTotal
+              }}
+              XAF</span
+            >
+          </div>
+        </div>
+
+        <!-- Historique des paiements (S'il y en a) -->
+        <div
+          v-if="selectedCommande?.paiements && selectedCommande.paiements.length > 0"
+          class="mb-6"
+        >
+          <h5 class="text-sm font-semibold text-slate-300 mb-2">Historique des transactions</h5>
+          <ul class="space-y-2">
+            <li
+              v-for="paiement in selectedCommande.paiements"
+              :key="paiement.id"
+              class="flex justify-between items-center bg-slate-900/50 p-2 rounded border border-slate-700/50 text-sm"
+            >
+              <div>
+                <span class="text-emerald-400 font-medium">+ {{ paiement.montant }} XAF</span>
+                <span class="text-slate-400 ml-2 text-xs"
+                  >({{ paiement.modePaiement.replace('_', ' ') }})</span
+                >
+              </div>
+              <div class="text-right">
+                <span class="text-slate-300 block">{{ formatDate(paiement.datePaiement) }}</span>
+                <span v-if="paiement.referenceTransaction" class="text-xs text-slate-500 font-mono"
+                  >Ref: {{ paiement.referenceTransaction }}</span
+                >
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- Bouton / Formulaire pour ajouter un paiement -->
+        <div
+          v-if="
+            selectedCommande.resteAPayer > 0 ||
+            (selectedCommande?.resteAPayer === undefined && selectedCommande.coutTotal > 0)
+          "
+        >
+          <!-- Bouton initial -->
+          <button
+            v-if="!isAjoutPaiementVisible"
+            @click="preparerNouveauPaiement"
+            class="w-full py-2 bg-emerald-600/20 hover:bg-emerald-600/40 border border-emerald-500/30 text-emerald-400 rounded-lg transition-colors font-medium text-sm flex items-center justify-center gap-2"
+          >
+            <span>+</span> Enregistrer un paiement (Acompte ou Solde)
+          </button>
+
+          <!-- Le formulaire (caché par défaut) -->
+          <form
+            v-else
+            @submit.prevent="soumettrePaiement"
+            class="bg-slate-800 p-4 rounded-lg border border-emerald-500/30 space-y-4"
+          >
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1"
+                  >Montant à verser (XAF) *</label
+                >
+                <input
+                  v-model="paiementForm.montant"
+                  type="number"
+                  required
+                  min="1"
+                  :max="selectedCommande.resteAPayer"
+                  class="w-full bg-slate-900 border border-slate-600 text-emerald-400 font-bold text-sm rounded-lg px-3 py-2 outline-none focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1"
+                  >Mode de paiement *</label
+                >
+                <select
+                  v-model="paiementForm.modePaiement"
+                  required
+                  class="w-full bg-slate-900 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-emerald-500"
+                >
+                  <option value="ESPECES">Espèces</option>
+                  <option value="MOBILE_MONEY">Mobile Money</option>
+                  <option value="CARTE_BANCAIRE">Carte Bancaire</option>
+                  <option value="VIREMENT">Virement</option>
+                </select>
+              </div>
+            </div>
+
+            <div v-if="paiementForm.modePaiement !== 'ESPECES'">
+              <label class="block text-xs font-medium text-slate-400 mb-1"
+                >Référence transaction (Optionnel)</label
+              >
+              <input
+                v-model="paiementForm.referenceTransaction"
+                type="text"
+                placeholder="Ex: ID Airtel Money / Tigo Cash"
+                class="w-full bg-slate-900 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                @click="isAjoutPaiementVisible = false"
+                class="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                :disabled="isPaiementLoading"
+                class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {{ isPaiementLoading ? 'Enregistrement...' : 'Valider le paiement' }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <template #footer>
         <button
           @click="isViewModalOpen = false"
@@ -983,8 +1200,6 @@ onMounted(() => {
         </svg>
       </button>
     </div>
-
-    <!-- Conteneur de l'image -->
     <!-- Utilisation de overflow-auto pour pouvoir scroller si l'image est très zoomée -->
     <div class="w-full h-full flex items-center justify-center overflow-auto p-4 custom-scrollbar">
       <img

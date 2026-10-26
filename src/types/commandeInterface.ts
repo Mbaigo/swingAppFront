@@ -52,6 +52,15 @@ export interface LigneCommandeResponse {
   imagesUrl?: string[] // Si tu renvoies les images
 }
 
+// 🚀 NOUVEAU : Interface pour représenter une transaction financière
+export interface Paiement {
+  id: number
+  montant: number
+  datePaiement: string
+  modePaiement: 'ESPECES' | 'MOBILE_MONEY' | 'CARTE_BANCAIRE' | 'VIREMENT' | string
+  referenceTransaction?: string
+}
+
 export interface Commande {
   id: number
   dateCommande: string
@@ -65,4 +74,9 @@ export interface Commande {
     telephone: string
   }
   lignes?: LigneCommandeResponse[] // 👈 L'ajout crucial pour la vue détails
+  // 💰 NOUVEAUX CHAMPS : Gestion Financière
+  statutPaiement?: 'NON_PAYE' | 'ACOMPTE' | 'PAYE_TOTALEMENT' | string
+  montantPaye?: number
+  resteAPayer?: number
+  paiements?: Paiement[] // Historique des paiements de cette commande
 }
