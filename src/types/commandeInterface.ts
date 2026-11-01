@@ -65,7 +65,7 @@ export interface Commande {
   id: number
   dateCommande: string
   dateLivraison: string
-  statut: string
+  statut: StatutCommande
   coutTotal: number
   client?: {
     id: number

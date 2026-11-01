@@ -4,6 +4,13 @@ import { clientService } from '@/services/clientService'
 import type { ClientResponseDTO, ClientRequestDTO, Genre } from '@/types/clientInterface'
 import Modal from '@/components/Modal.vue'
 
+import { ficheMesureService } from '@/services/ficheMesureService'
+import type {
+  FicheMesureRequest,
+  FicheMesureResponse,
+  MensurationsMap,
+} from '@/types/ficheMesureInterface'
+
 // --- VARIABLES D'ÉTAT ---
 const clients = ref<ClientResponseDTO[]>([])
 const isLoading = ref(false)
@@ -145,6 +152,162 @@ const getBadgeClass = (genre: Genre) => {
       return 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
     default:
       return 'bg-gray-500/20 text-gray-400'
+  }
+}
+
+// ==========================================
+// GESTION DES FICHES DE MESURE (MENSURATIONS)
+// ==========================================
+import { ficheMesureService } from '@/services/ficheMesureService'
+import type {
+  FicheMesureRequest,
+  FicheMesureResponse,
+  MensurationsMap,
+} from '@/types/ficheMesureInterface'
+
+const isFichesModalOpen = ref(false)
+const isFichesLoading = ref(false)
+const selectedClientPourFiches = ref<any>(null)
+const historiqueFiches = ref<FicheMesureResponse[]>([])
+
+// État du formulaire
+const isCreatingNewFiche = ref(false)
+
+// L'objet formulaire principal lié à la fiche
+const ficheForm = ref<{
+  id?: number
+  nomProjet: string
+  remarquesSpecifiques: string
+  mesures: MensurationsMap
+}>({
+  nomProjet: '',
+  remarquesSpecifiques: '',
+  mesures: {},
+})
+
+// Tableau réactif pour gérer les champs dynamiques (Lignes de mesures dans l'UI)
+const mesuresUI = ref<{ cle: string; valeur: number | '' }[]>([])
+
+// Ouvre le grand modal des fiches et charge l'historique
+const ouvrirModalFiches = async (client: any) => {
+  selectedClientPourFiches.value = client
+  isFichesModalOpen.value = true
+  isFichesLoading.value = true
+  historiqueFiches.value = []
+
+  try {
+    const response = await ficheMesureService.getFichesByClientId(client.id)
+    historiqueFiches.value = response.data
+
+    if (historiqueFiches.value.length > 0) {
+      // On sélectionne la fiche la plus récente
+      selectionnerFiche(historiqueFiches.value[0])
+    } else {
+      // Si aucune fiche, on passe directement en mode création
+      preparerNouvelleFiche()
+    }
+  } catch (error: any) {
+    if (error.response?.status === 404) {
+      preparerNouvelleFiche()
+    } else {
+      console.error('Erreur récupération fiches', error)
+    }
+  } finally {
+    isFichesLoading.value = false
+  }
+}
+
+// Prépare le formulaire pour une TOUTE NOUVELLE fiche
+const preparerNouvelleFiche = () => {
+  isCreatingNewFiche.value = true
+  ficheForm.value = {
+    nomProjet: '',
+    remarquesSpecifiques: '',
+    mesures: {},
+  }
+  // On insère 3 lignes vides par défaut pour faire gagner du temps au tailleur
+  mesuresUI.value = [
+    { cle: '', valeur: '' },
+    { cle: '', valeur: '' },
+    { cle: '', valeur: '' },
+  ]
+}
+
+// Charge une fiche EXISTANTE dans le formulaire pour lecture/modification
+const selectionnerFiche = (fiche: FicheMesureResponse) => {
+  isCreatingNewFiche.value = false
+  ficheForm.value = {
+    id: fiche.id,
+    nomProjet: fiche.nomProjet,
+    remarquesSpecifiques: fiche.remarquesSpecifiques || '',
+    mesures: { ...fiche.mesures },
+  }
+
+  // Transformation de l'objet JSON { "Cou": 40, "Poitrine": 100 }
+  // en tableau d'objets [{cle: "Cou", valeur: 40}, {cle: "Poitrine", valeur: 100}] pour le v-for Vue.js
+  if (fiche.mesures && Object.keys(fiche.mesures).length > 0) {
+    mesuresUI.value = Object.entries(fiche.mesures).map(([cle, valeur]) => ({ cle, valeur }))
+  } else {
+    mesuresUI.value = []
+  }
+}
+
+// --- ACTIONS DYNAMIQUES DU FORMULAIRE ---
+const ajouterLigneMesure = () => {
+  mesuresUI.value.push({ cle: '', valeur: '' })
+}
+
+const supprimerLigneMesure = (index: number) => {
+  mesuresUI.value.splice(index, 1)
+}
+
+// --- SAUVEGARDE EN BASE DE DONNÉES ---
+const sauvegarderFiche = async () => {
+  if (!selectedClientPourFiches.value || !ficheForm.value.nomProjet) return
+
+  // 🔒 Formatage strict : On reconstruit le Map pour le Backend
+  const mesuresMapPourBackend: Record<string, number> = {}
+
+  mesuresUI.value.forEach((ligne) => {
+    // On ignore silencieusement les lignes que le tailleur a laissées vides
+    if (ligne.cle.trim() !== '' && ligne.valeur !== '' && ligne.valeur !== null) {
+      // Capitalisation de la première lettre pour que ce soit joli et uniforme (ex: "cou" -> "Cou")
+      const clePropre = ligne.cle.trim().charAt(0).toUpperCase() + ligne.cle.trim().slice(1)
+      mesuresMapPourBackend[clePropre] = Number(ligne.valeur)
+    }
+  })
+
+  isFichesLoading.value = true
+
+  try {
+    const payload: FicheMesureRequest = {
+      clientId: selectedClientPourFiches.value.id,
+      nomProjet: ficheForm.value.nomProjet,
+      remarquesSpecifiques: ficheForm.value.remarquesSpecifiques,
+      mesures: mesuresMapPourBackend, // 👈 Le DTO Java reçoit un beau Map<String, Integer>
+    }
+
+    if (isCreatingNewFiche.value) {
+      await ficheMesureService.createFicheMesure(payload)
+      alert('Nouvelle fiche de mesures créée avec succès !')
+    } else {
+      await ficheMesureService.updateFicheMesure(ficheForm.value.id!, payload)
+      alert('Fiche mise à jour avec succès !')
+    }
+
+    // Rafraîchissement automatique de la liste à gauche
+    const response = await ficheMesureService.getFichesByClientId(selectedClientPourFiches.value.id)
+    historiqueFiches.value = response.data
+
+    // On resélectionne la fiche fraîchement créée/modifiée
+    if (historiqueFiches.value.length > 0) {
+      selectionnerFiche(historiqueFiches.value[0])
+    }
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde de la fiche de mesure :', error)
+    alert("Impossible d'enregistrer la fiche. Vérifiez les informations.")
+  } finally {
+    isFichesLoading.value = false
   }
 }
 
@@ -374,7 +537,6 @@ onMounted(() => {
         </button>
       </template>
     </Modal>
-
     <!-- 2. MODAL DE CONSULTATION (DÉTAILS) -->
     <Modal :isOpen="isViewModalOpen" title="Détails du client" @close="isViewModalOpen = false">
       <div v-if="selectedClient" class="space-y-6">
@@ -419,13 +581,29 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Notes (Mensurations) -->
+        <!-- Bouton de gestion des fiches de mensurations (NOUVEAU) -->
+        <div
+          class="bg-slate-800 p-4 rounded-lg border border-emerald-900/50 flex items-center justify-between"
+        >
+          <div>
+            <h4 class="text-white font-medium text-sm">Fiches techniques & Mesures</h4>
+            <p class="text-xs text-slate-400 mt-1">Gérer les mensurations pour les projets.</p>
+          </div>
+          <button
+            @click="ouvrirModalFiches(selectedClient)"
+            class="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors shadow-lg flex items-center gap-2"
+          >
+            <span>📐</span> Gérer les fiches
+          </button>
+        </div>
+
+        <!-- Notes (Morphologie globale) -->
         <div class="bg-slate-900/50 p-4 rounded-lg border border-slate-700">
           <span class="block text-xs font-semibold text-slate-500 uppercase mb-2"
-            >Mensurations & Notes</span
+            >Notes générales / Morphologie</span
           >
           <p class="text-slate-300 text-sm whitespace-pre-line">
-            {{ selectedClient.notesMorphologie || 'Aucune note enregistrée.' }}
+            {{ selectedClient.notesMorphologie || 'Aucune note générale enregistrée.' }}
           </p>
         </div>
       </div>
@@ -433,11 +611,236 @@ onMounted(() => {
       <template #footer>
         <button
           @click="isViewModalOpen = false"
-          class="px-4 py-2 text-sm font-medium text-white bg-slate-700 border border-slate-600 rounded-lg hover:bg-slate-600 transition-colors"
+          class="px-4 py-2 text-sm font-medium text-white bg-slate-700 border border-slate-600 rounded-lg hover:bg-slate-600 transition-colors w-full sm:w-auto"
         >
-          Fermer
+          Fermer le dossier
         </button>
       </template>
+    </Modal>
+
+    <!-- MODAL HISTORIQUE ET FICHES DE MESURES -->
+    <Modal
+      :isOpen="isFichesModalOpen"
+      title="Dossier Mensurations"
+      @close="isFichesModalOpen = false"
+    >
+      <div
+        v-if="isFichesLoading && historiqueFiches.length === 0 && !isCreatingNewFiche"
+        class="flex justify-center p-8"
+      >
+        <span class="text-slate-400">Chargement des données...</span>
+      </div>
+
+      <div v-else class="flex flex-col md:flex-row gap-6">
+        <!-- COLONNE GAUCHE : HISTORIQUE -->
+        <div class="w-full md:w-1/3 border-r border-slate-700 pr-0 md:pr-4 flex flex-col h-[550px]">
+          <!-- 🚀 LE GROS BOUTON CRÉER EST ICI -->
+          <button
+            @click="preparerNouvelleFiche"
+            class="w-full mb-4 px-4 py-3 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-600/40 rounded-lg text-sm font-bold transition-colors flex items-center justify-center gap-2 shadow-sm"
+            :class="{ 'ring-2 ring-emerald-500': isCreatingNewFiche }"
+          >
+            <span>➕</span> Créer une fiche
+          </button>
+
+          <h4
+            class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 border-b border-slate-700 pb-2"
+          >
+            Anciennes fiches ({{ historiqueFiches.length }})
+          </h4>
+
+          <!-- Liste scrollable de l'historique -->
+          <ul class="space-y-2 overflow-y-auto custom-scrollbar flex-1 pr-1">
+            <li
+              v-if="historiqueFiches.length === 0"
+              class="text-xs text-slate-500 italic p-4 text-center bg-slate-800/50 rounded-lg"
+            >
+              Aucun historique pour ce client.
+            </li>
+
+            <li
+              v-for="fiche in historiqueFiches"
+              :key="fiche.id"
+              @click="selectionnerFiche(fiche)"
+              class="p-3 rounded-lg cursor-pointer transition-colors border"
+              :class="
+                !isCreatingNewFiche && ficheForm.id === fiche.id
+                  ? 'bg-slate-700/50 border-blue-500/50 shadow-md'
+                  : 'bg-slate-900 border-slate-700 hover:bg-slate-800'
+              "
+            >
+              <div class="flex justify-between items-start mb-1">
+                <span class="font-medium text-white text-sm line-clamp-1">{{
+                  fiche.nomProjet
+                }}</span>
+              </div>
+              <div class="text-xs text-slate-400 flex items-center gap-1">
+                📅 {{ formatDate(fiche.datePrise) }}
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <!-- COLONNE DROITE : LE FORMULAIRE -->
+        <div class="w-full md:w-2/3 h-[550px] overflow-y-auto custom-scrollbar pr-2">
+          <div
+            class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2 sticky top-0 bg-slate-900 z-10 pt-1"
+          >
+            <h3
+              class="text-lg font-bold"
+              :class="isCreatingNewFiche ? 'text-emerald-400' : 'text-blue-400'"
+            >
+              {{ isCreatingNewFiche ? '✨ Nouvelle fiche de mesures' : 'Détail de la fiche' }}
+            </h3>
+            <span
+              v-if="!isCreatingNewFiche"
+              class="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded font-mono border border-slate-700"
+              >ID: {{ ficheForm.id }}</span
+            >
+          </div>
+
+          <form @submit.prevent="sauvegarderFiche" class="space-y-5">
+            <!-- Nom du Projet -->
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1"
+                >Nom du projet / Type de vêtement *</label
+              >
+              <input
+                v-model="ficheForm.nomProjet"
+                type="text"
+                required
+                placeholder="Ex: Costume croisé, Chemise slim..."
+                class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-shadow"
+              />
+            </div>
+
+            <!-- NOUVEAU BLOC : Mesures Dynamiques -->
+            <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-700/50">
+              <div class="flex justify-between items-center mb-4">
+                <h4 class="text-blue-400 text-sm font-semibold flex items-center gap-2">
+                  <span>📏</span> Dimensions personnalisées (cm)
+                </h4>
+                <button
+                  type="button"
+                  @click="ajouterLigneMesure"
+                  class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium rounded transition-colors"
+                >
+                  + Ajouter une mesure
+                </button>
+              </div>
+
+              <!-- Lignes dynamiques -->
+              <div class="space-y-3">
+                <div
+                  v-if="mesuresUI.length === 0"
+                  class="text-center text-xs text-slate-500 italic py-2"
+                >
+                  Aucune mesure ajoutée. Cliquez sur "+ Ajouter une mesure".
+                </div>
+
+                <div
+                  v-for="(ligne, index) in mesuresUI"
+                  :key="index"
+                  class="flex items-center gap-3"
+                >
+                  <!-- Champ Clé (Nom de la mesure) avec auto-complétion native HTML -->
+                  <input
+                    v-model="ligne.cle"
+                    type="text"
+                    placeholder="Sélectionnez ou tapez une mesure..."
+                    list="suggestions-mesures"
+                    class="w-3/5 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+                  />
+
+                  <!-- Champ Valeur (cm) -->
+                  <input
+                    v-model="ligne.valeur"
+                    type="number"
+                    step="0.5"
+                    placeholder="Valeur (cm)"
+                    class="w-2/5 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-emerald-500 outline-none text-center font-mono"
+                  />
+
+                  <!-- Bouton Supprimer -->
+                  <button
+                    type="button"
+                    @click="supprimerLigneMesure(index)"
+                    class="p-2 text-slate-500 hover:text-red-400 bg-slate-900 hover:bg-red-500/10 rounded-lg border border-slate-700 transition-colors"
+                    title="Retirer cette ligne"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      ></path>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Suggestions pour aider la saisie rapide -->
+              <datalist id="suggestions-mesures">
+                <option value="Cou"></option>
+                <option value="Épaules"></option>
+                <option value="Poitrine"></option>
+                <option value="Tour de taille"></option>
+                <option value="Longueur manches"></option>
+                <option value="Hanches"></option>
+                <option value="Cuisses"></option>
+                <option value="Longueur pantalon"></option>
+                <option value="Tour de bras"></option>
+              </datalist>
+            </div>
+
+            <!-- Observations -->
+            <div>
+              <label class="block text-xs font-medium text-slate-400 mb-1"
+                >Observations / Morphologie</label
+              >
+              <textarea
+                v-model="ficheForm.remarquesSpecifiques"
+                rows="2"
+                class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:border-blue-500 outline-none"
+                placeholder="Notes spécifiques à ce vêtement..."
+              ></textarea>
+            </div>
+
+            <!-- Actions -->
+            <div
+              class="flex justify-end gap-3 pt-4 border-t border-slate-700 sticky bottom-0 bg-slate-900 pb-2"
+            >
+              <button
+                type="button"
+                @click="isFichesModalOpen = false"
+                class="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors"
+              >
+                Fermer
+              </button>
+
+              <button
+                type="submit"
+                :disabled="isFichesLoading"
+                class="px-6 py-2 text-white rounded-lg text-sm font-bold transition-all disabled:opacity-50 shadow-lg"
+                :class="
+                  isCreatingNewFiche
+                    ? 'bg-emerald-600 hover:bg-emerald-500'
+                    : 'bg-blue-600 hover:bg-blue-500'
+                "
+              >
+                {{
+                  isFichesLoading
+                    ? 'Patientez...'
+                    : isCreatingNewFiche
+                      ? '✓ Enregistrer la fiche'
+                      : 'Mettre à jour'
+                }}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </Modal>
   </div>
 </template>
