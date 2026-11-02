@@ -158,12 +158,6 @@ const getBadgeClass = (genre: Genre) => {
 // ==========================================
 // GESTION DES FICHES DE MESURE (MENSURATIONS)
 // ==========================================
-import { ficheMesureService } from '@/services/ficheMesureService'
-import type {
-  FicheMesureRequest,
-  FicheMesureResponse,
-  MensurationsMap,
-} from '@/types/ficheMesureInterface'
 
 const isFichesModalOpen = ref(false)
 const isFichesLoading = ref(false)
