@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useDashboardStore } from '@/stores/dashboardStore'
-import { Doughnut, Line } from 'vue-chartjs'
+import { Doughnut, Line, Bar } from 'vue-chartjs'
 import {
   Chart as ChartJS,
   Title,
@@ -13,6 +13,7 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Filler,
 } from 'chart.js'
 
@@ -25,6 +26,7 @@ ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
+  BarElement,
   LineElement,
   Filler,
 )
@@ -106,60 +108,127 @@ const doughnutOptions = ref({ responsive: true, maintainAspectRatio: false })
 // --------------------------------------------------
 // 2. COURBE SIMPLE : (Statique pour le moment)
 // --------------------------------------------------
-const lineTraiteesData = ref({
-  labels: ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4', 'Sem 5', 'Sem 6', 'Sem 7', 'Sem 8'],
-  datasets: [
-    {
-      label: 'Volume traité (Juillet - Août)',
-      data: [12, 15, 10, 18, 22, 25, 20, 30],
-      borderColor: '#10b981',
-      backgroundColor: 'rgba(16, 185, 129, 0.1)',
-      fill: true,
-      tension: 0.4,
-    },
-  ],
+// --------------------------------------------------
+// 2. COURBE : Volume traité (8 dernières semaines)
+// --------------------------------------------------
+const lineTraiteesData = computed(() => {
+  // Les labels pour les 8 dernières semaines (env. 2 mois)
+  const labels = ['S-7', 'S-6', 'S-5', 'S-4', 'S-3', 'S-2', 'S-1', 'Cette sem.']
+  const donneesHebdo = [0, 0, 0, 0, 0, 0, 0, 0]
+
+  const aujourdHui = new Date()
+
+  // On récupère les données depuis le store (qui contient déjà l'historique récent)
+  const commandes = dashboardStore.commandesSixMois || []
+
+  commandes.forEach((cmd) => {
+    const dateStr = cmd.dateCommande || cmd.dateCreation
+    if (!dateStr) return
+
+    const dateCmd = new Date(dateStr)
+
+    // Calcul du nombre de jours écoulés depuis la date de création de la commande
+    const differenceEnTemps = aujourdHui.getTime() - dateCmd.getTime()
+    const differenceEnJours = Math.floor(differenceEnTemps / (1000 * 3600 * 24))
+
+    // On ne conserve que ce qui est compris dans les 56 derniers jours (8 semaines x 7 jours)
+    if (differenceEnJours >= 0 && differenceEnJours < 56) {
+      // Logique d'indexation :
+      // 0 à 6 jours = index 7 (Cette sem.)
+      // 49 à 55 jours = index 0 (S-7)
+      const indexInverse = Math.floor(differenceEnJours / 7)
+      const index = 7 - indexInverse
+
+      // Si tu souhaites n'afficher que les commandes réellement "traitées" / terminées,
+      // tu peux décommenter la condition ci-dessous :
+      // if (cmd.statut === 'TERMINEE') {
+
+      donneesHebdo[index]++
+
+      // }
+    }
+  })
+
+  return {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Volume de commandes',
+        data: donneesHebdo,
+        borderColor: '#10b981', // Vert émeraude
+        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        fill: true,
+        tension: 0.4,
+      },
+    ],
+  }
 })
 
 // --------------------------------------------------
 // 3. COURBE COMPARATIVE (DYNAMIQUE) : Mois N vs N-1
 // --------------------------------------------------
-const lineComparaisonData = computed(() => {
-  // Fonction utilitaire pour regrouper les commandes par "Semaine" (1 à 4)
-  const grouperParSemaine = (commandes: any[]) => {
-    const semaines = [0, 0, 0, 0] // 4 semaines
-    commandes.forEach((cmd) => {
-      // Attention à utiliser le bon nom de champ (dateCommande ou dateCreation selon ton DTO)
-      const dateStr = cmd.dateCommande || cmd.dateCreation
-      if (!dateStr) return
+// --------------------------------------------------
+// 3. BAR CHART : Évolution sur les 6 derniers mois
+// --------------------------------------------------
+const barSixMoisData = computed(() => {
+  const labels = []
+  const moisNoms = [
+    'Janv.',
+    'Févr.',
+    'Mars',
+    'Avril',
+    'Mai',
+    'Juin',
+    'Juil.',
+    'Août',
+    'Sept.',
+    'Oct.',
+    'Nov.',
+    'Déc.',
+  ]
 
-      const jour = new Date(dateStr).getDate()
+  const dateActuelle = new Date()
 
-      if (jour <= 7) semaines[0]++
-      else if (jour <= 14) semaines[1]++
-      else if (jour <= 21) semaines[2]++
-      else semaines[3]++
-    })
-    return semaines
+  // 1. Générer les noms des 6 derniers mois dynamiquement
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(dateActuelle.getFullYear(), dateActuelle.getMonth() - i, 1)
+    labels.push(moisNoms[d.getMonth()])
   }
 
-  const dataMoisActuel = grouperParSemaine(dashboardStore.commandesMoisActuel)
-  const dataMoisPrecedent = grouperParSemaine(dashboardStore.commandesMoisPrecedent)
+  const totauxMensuels = [0, 0, 0, 0, 0, 0]
+
+  // 2. Récupérer les données depuis le store
+  // ⚠️ Important : Il faudra s'assurer que le store / backend renvoie bien cette liste
+  const commandes = dashboardStore.commandesSixMois || []
+
+  // 3. Ventiler chaque commande dans le mois correspondant
+  commandes.forEach((cmd) => {
+    const dateStr = cmd.dateCommande || cmd.dateCreation
+    if (!dateStr) return
+
+    const dateCmd = new Date(dateStr)
+
+    // Calcul de l'écart en mois par rapport au mois actuel
+    const diffMois =
+      (dateActuelle.getFullYear() - dateCmd.getFullYear()) * 12 +
+      (dateActuelle.getMonth() - dateCmd.getMonth())
+
+    // Si la commande est bien dans la fenêtre des 6 derniers mois
+    if (diffMois >= 0 && diffMois <= 5) {
+      const index = 5 - diffMois // Le mois actuel est toujours à la fin du tableau (index 5)
+      totauxMensuels[index]++
+    }
+  })
 
   return {
-    labels: ['Semaine 1', 'Semaine 2', 'Semaine 3', 'Semaine 4'],
+    labels: labels,
     datasets: [
       {
-        label: 'Mois Précédent',
-        data: dataMoisPrecedent,
-        borderColor: '#94a3b8',
-        borderDash: [5, 5],
-        tension: 0.4,
-      },
-      {
-        label: 'Mois Actuel',
-        data: dataMoisActuel,
-        borderColor: '#3b82f6',
-        tension: 0.4,
+        label: 'Commandes créées',
+        data: totauxMensuels,
+        backgroundColor: '#3b82f6', // Bleu vif
+        borderRadius: 4,
+        barPercentage: 0.6,
       },
     ],
   }
@@ -291,23 +360,17 @@ const formatMoney = (amount: number) => {
     </div>
 
     <!-- 3ème Section : Comparaison globale -->
+    <!-- 3ème Section : Évolution 6 mois -->
     <div class="bg-slate-800 p-6 rounded-xl shadow-sm border border-slate-700">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
-        <h3 class="text-gray-300 font-semibold">Comparaison des créations (Mois N vs Mois N-1)</h3>
-        <!-- Boutons filtres (statiques pour le moment) -->
-        <select
-          class="mt-2 sm:mt-0 bg-slate-700 text-gray-300 border border-slate-600 text-sm rounded-lg px-3 py-2 outline-none focus:border-blue-500"
-        >
-          <!-- Tu pourras rendre ce select dynamique plus tard -->
-          <option>Mois actuel vs Mois précédent</option>
-        </select>
+        <h3 class="text-gray-300 font-semibold">Évolution des créations (6 derniers mois)</h3>
       </div>
 
       <div v-if="dashboardStore.isLoading" class="h-72 flex items-center justify-center">
-        <span class="text-slate-500 animate-pulse">Analyse comparative en cours...</span>
+        <span class="text-slate-500 animate-pulse">Analyse en cours...</span>
       </div>
       <div v-else class="h-72 relative">
-        <Line :data="lineComparaisonData" :options="lineOptions" />
+        <Bar :data="barSixMoisData" :options="barOptions" />
       </div>
     </div>
   </div>

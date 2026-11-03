@@ -7,8 +7,7 @@ export const useDashboardStore = defineStore('dashboard', {
     commandesEnCours: 0,
     chiffreSemaine: 0, // On garde ce nom pour la variable, même si c'est le chiffre de la période
     repartitionStatut: [0, 0, 0, 0],
-    commandesMoisActuel: [] as any[],
-    commandesMoisPrecedent: [] as any[],
+    commandesSixMois: [] as any[],
     isLoading: false,
   }),
 
@@ -38,8 +37,7 @@ export const useDashboardStore = defineStore('dashboard', {
           rep['TERMINEE'] || 0,
         ]
 
-        this.commandesMoisActuel = data.commandesMoisActuel || []
-        this.commandesMoisPrecedent = data.commandesMoisPrecedent || []
+        this.commandesSixMois = data.commandesSixMois || []
       } catch (error) {
         console.error('Erreur lors du chargement des données:', error)
       } finally {
