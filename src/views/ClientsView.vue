@@ -5,11 +5,14 @@ import type { ClientResponseDTO, ClientRequestDTO, Genre } from '@/types/clientI
 import Modal from '@/components/Modal.vue'
 
 import { ficheMesureService } from '@/services/ficheMesureService'
+import { useToast } from '@/composables/useToast'
 import type {
   FicheMesureRequest,
   FicheMesureResponse,
   MensurationsMap,
 } from '@/types/ficheMesureInterface'
+
+const toast = useToast()
 
 // --- VARIABLES D'ÉTAT ---
 const clients = ref<ClientResponseDTO[]>([])
@@ -283,10 +286,10 @@ const sauvegarderFiche = async () => {
 
     if (isCreatingNewFiche.value) {
       await ficheMesureService.createFicheMesure(payload)
-      alert('Nouvelle fiche de mesures créée avec succès !')
+      toast.success('Nouvelle fiche de mesures créée avec succès !')
     } else {
       await ficheMesureService.updateFicheMesure(ficheForm.value.id!, payload)
-      alert('Fiche mise à jour avec succès !')
+      toast.success('Fiche mise à jour avec succès !')
     }
 
     // Rafraîchissement automatique de la liste à gauche
@@ -299,7 +302,7 @@ const sauvegarderFiche = async () => {
     }
   } catch (error) {
     console.error('Erreur lors de la sauvegarde de la fiche de mesure :', error)
-    alert("Impossible d'enregistrer la fiche. Vérifiez les informations.")
+    toast.error("Impossible d'enregistrer la fiche. Vérifiez les informations.")
   } finally {
     isFichesLoading.value = false
   }
