@@ -295,14 +295,16 @@ const soumettreCommande = async () => {
     }
 
     // MAPPER POUR LE BACKEND
+    // MAPPER POUR LE BACKEND
     const payload: CommandeRequest = {
       clientId: Number(commandeForm.value.clientId),
       dateLivraison: commandeForm.value.dateLivraison,
-      statut: commandeForm.value.statut,
+      // Forcer le type pour rassurer le compilateur :
+      statut: commandeForm.value.statut as any,
       lignes: commandeForm.value.lignes.map((ligne: any) => ({
         nomMaquette: ligne.nomMaquette,
-        quantite: ligne.quantite,
-        prixConfection: ligne.prixConfection,
+        quantite: Number(ligne.quantite), // <-- Ligne 705 potentielle : forcer le type Number
+        prixConfection: Number(ligne.prixConfection),
         imageUrlMaquette: ligne.imagesUrl && ligne.imagesUrl.length > 0 ? ligne.imagesUrl[0] : '',
       })),
     }
@@ -858,7 +860,9 @@ onMounted(() => {
                 >
                   <!-- 1ère Cellule : Nom du modèle + Images -->
                   <td class="px-4 py-3">
-                    <span class="font-medium text-white block">{{ ligne.nomMaquette }}</span>
+                    <span class="font-medium text-white block">{{
+                      ligne?.nomMaquette || 'Sans nom'
+                    }}</span>
 
                     <!-- 🚀 ON UTILISE NOTRE NOUVELLE FONCTION ICI -->
                     <div v-if="getImagesLigne(ligne).length > 0" class="flex flex-wrap gap-2 mt-2">
@@ -879,16 +883,17 @@ onMounted(() => {
                   </td>
 
                   <!-- 2ème Cellule : Quantité -->
-                  <td class="px-4 py-3 text-center text-slate-300">{{ ligne.quantite }}</td>
+                  <td class="px-4 py-3 text-center text-slate-300">{{ ligne?.quantite ?? 0 }}</td>
 
                   <!-- 3ème Cellule : Prix Unitaire -->
                   <td class="px-4 py-3 text-right text-slate-400">
-                    {{ ligne.prixConfection }} XAF
+                    {{ ligne?.prixConfection ?? 0 }} XAF
                   </td>
 
                   <!-- 4ème Cellule : Sous-total -->
                   <td class="px-4 py-3 text-right font-medium text-white">
-                    {{ ligne.sousTotal || ligne.quantite * ligne.prixConfection }} XAF
+                    {{ ligne?.sousTotal ?? (ligne?.quantite ?? 0) * (ligne?.prixConfection ?? 0) }}
+                    XAF
                   </td>
                 </tr>
               </tbody>
@@ -902,7 +907,7 @@ onMounted(() => {
                     Total de la commande :
                   </td>
                   <td class="px-4 py-3 text-right text-lg font-bold text-emerald-400">
-                    {{ selectedCommande.coutTotal }} XAF
+                    {{ selectedCommande.coutTotal ?? 0 }} XAF
                   </td>
                 </tr>
               </tfoot>
@@ -912,17 +917,17 @@ onMounted(() => {
       </div>
 
       <!-- 💰 SECTION FINANCIÈRE ET PAIEMENTS -->
-      <div class="mt-8 border-t border-slate-700 pt-6">
+      <div v-if="selectedCommande" class="mt-8 border-t border-slate-700 pt-6">
         <h4 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
           <span>💳 État Financier</span>
           <!-- Badge de statut de paiement -->
           <span
-            v-if="selectedCommande?.statutPaiement === 'PAYE_TOTALEMENT'"
+            v-if="selectedCommande.statutPaiement === 'PAYE_TOTALEMENT'"
             class="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs px-2 py-0.5 rounded-full font-medium"
             >Soldé</span
           >
           <span
-            v-else-if="selectedCommande?.statutPaiement === 'ACOMPTE'"
+            v-else-if="selectedCommande.statutPaiement === 'ACOMPTE'"
             class="bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs px-2 py-0.5 rounded-full font-medium"
             >Acompte versé</span
           >
@@ -937,30 +942,27 @@ onMounted(() => {
         <div class="grid grid-cols-3 gap-4 mb-6">
           <div class="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
             <span class="block text-xs text-slate-400 mb-1">Total Commande</span>
-            <span class="text-lg font-bold text-white">{{ selectedCommande?.coutTotal }} XAF</span>
+            <span class="text-lg font-bold text-white"
+              >{{ selectedCommande.coutTotal ?? 0 }} XAF</span
+            >
           </div>
           <div class="bg-slate-800 p-3 rounded-lg border border-emerald-900/50 text-center">
             <span class="block text-xs text-slate-400 mb-1">Déjà Payé</span>
             <span class="text-lg font-bold text-emerald-400"
-              >{{ selectedCommande?.montantPaye || 0 }} XAF</span
+              >{{ selectedCommande.montantPaye ?? 0 }} XAF</span
             >
           </div>
           <div class="bg-slate-800 p-3 rounded-lg border border-amber-900/50 text-center">
             <span class="block text-xs text-slate-400 mb-1">Reste à payer</span>
-            <span class="text-lg font-bold text-amber-400"
-              >{{
-                selectedCommande?.resteAPayer !== undefined
-                  ? selectedCommande.resteAPayer
-                  : selectedCommande?.coutTotal
-              }}
-              XAF</span
-            >
+            <span class="text-lg font-bold text-amber-400">
+              {{ selectedCommande.resteAPayer ?? selectedCommande.coutTotal ?? 0 }} XAF
+            </span>
           </div>
         </div>
 
         <!-- Historique des paiements (S'il y en a) -->
         <div
-          v-if="selectedCommande?.paiements && selectedCommande.paiements.length > 0"
+          v-if="selectedCommande.paiements && selectedCommande.paiements.length > 0"
           class="mb-6"
         >
           <h5 class="text-sm font-semibold text-slate-300 mb-2">Historique des transactions</h5>
@@ -971,16 +973,19 @@ onMounted(() => {
               class="flex justify-between items-center bg-slate-900/50 p-2 rounded border border-slate-700/50 text-sm"
             >
               <div>
-                <span class="text-emerald-400 font-medium">+ {{ paiement.montant }} XAF</span>
-                <span class="text-slate-400 ml-2 text-xs"
-                  >({{ paiement.modePaiement.replace('_', ' ') }})</span
-                >
+                <span class="text-emerald-400 font-medium">+ {{ paiement?.montant ?? 0 }} XAF</span>
+                <span v-if="paiement?.modePaiement" class="text-slate-400 ml-2 text-xs">
+                  ({{ paiement.modePaiement.replace('_', ' ') }})
+                </span>
               </div>
               <div class="text-right">
-                <span class="text-slate-300 block">{{ formatDate(paiement.datePaiement) }}</span>
-                <span v-if="paiement.referenceTransaction" class="text-xs text-slate-500 font-mono"
-                  >Ref: {{ paiement.referenceTransaction }}</span
+                <span class="text-slate-300 block">{{ formatDate(paiement?.datePaiement) }}</span>
+                <span
+                  v-if="paiement?.referenceTransaction"
+                  class="text-xs text-slate-500 font-mono"
                 >
+                  Ref: {{ paiement.referenceTransaction }}
+                </span>
               </div>
             </li>
           </ul>
@@ -989,8 +994,8 @@ onMounted(() => {
         <!-- Bouton / Formulaire pour ajouter un paiement -->
         <div
           v-if="
-            selectedCommande.resteAPayer > 0 ||
-            (selectedCommande?.resteAPayer === undefined && selectedCommande.coutTotal > 0)
+            (selectedCommande.resteAPayer ?? 0) > 0 ||
+            (selectedCommande.resteAPayer === undefined && (selectedCommande.coutTotal ?? 0) > 0)
           "
         >
           <!-- Bouton initial -->
@@ -1018,7 +1023,7 @@ onMounted(() => {
                   type="number"
                   required
                   min="1"
-                  :max="selectedCommande.resteAPayer"
+                  :max="selectedCommande.resteAPayer ?? selectedCommande.coutTotal"
                   class="w-full bg-slate-900 border border-slate-600 text-emerald-400 font-bold text-sm rounded-lg px-3 py-2 outline-none focus:border-emerald-500"
                 />
               </div>

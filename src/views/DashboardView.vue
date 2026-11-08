@@ -72,7 +72,7 @@ const doughnutData = computed(() => ({
 
 // --- APRÈS (La version intelligente) ---
 const doughnutData = computed(() => {
-  const donnees = dashboardStore.repartitionStatut
+  const donnees = dashboardStore.repartitionStatut || [0, 0, 0, 0]
   // On calcule la somme de toutes les commandes
   const totalCommandes = donnees.reduce((a, b) => a + b, 0)
 

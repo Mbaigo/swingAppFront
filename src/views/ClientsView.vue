@@ -301,7 +301,10 @@ const sauvegarderFiche = async () => {
 
     // On resélectionne la fiche fraîchement créée/modifiée
     if (historiqueFiches.value.length > 0) {
-      selectionnerFiche(historiqueFiches.value[0])
+      const ficheMiseAJour = historiqueFiches.value[0]
+      if (ficheMiseAJour) {
+        selectionnerFiche(ficheMiseAJour)
+      }
     }
   } catch (error) {
     console.error('Erreur lors de la sauvegarde de la fiche de mesure :', error)
