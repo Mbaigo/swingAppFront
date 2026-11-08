@@ -704,7 +704,7 @@ onMounted(() => {
                       class="w-16 h-16 object-cover rounded-lg border border-blue-500/50 shadow-sm"
                     />
                     <button
-                      @click.prevent="supprimerImageLocale(index, imgIdx)"
+                      @click.prevent="supprimerImageLocale(Number(index), Number(imgIdx))"
                       class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow"
                       title="Retirer la sélection"
                     >

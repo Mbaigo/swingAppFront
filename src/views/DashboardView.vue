@@ -72,8 +72,7 @@ const doughnutData = computed(() => ({
 
 // --- APRÈS (La version intelligente) ---
 const doughnutData = computed(() => {
-  const donnees = dashboardStore.repartitionStatut || [0, 0, 0, 0]
-  // On calcule la somme de toutes les commandes
+  const donnees = (dashboardStore.repartitionStatut ?? [0, 0, 0, 0]) as number[]
   const totalCommandes = donnees.reduce((a, b) => a + b, 0)
 
   // Si le total est 0, on affiche un disque gris (vide)
@@ -119,7 +118,7 @@ const lineTraiteesData = computed(() => {
   const aujourdHui = new Date()
 
   // On récupère les données depuis le store (qui contient déjà l'historique récent)
-  const commandes = dashboardStore.commandesSixMois || []
+  const commandes = (dashboardStore.commandesSixMois ?? []) as any[]
 
   commandes.forEach((cmd) => {
     const dateStr = cmd.dateCommande || cmd.dateCreation
