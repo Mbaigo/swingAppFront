@@ -237,7 +237,22 @@ const barSixMoisData = computed(() => {
 const lineOptions = ref({
   responsive: true,
   maintainAspectRatio: false,
-  plugins: { legend: { position: 'bottom' } },
+  plugins: { legend: { position: 'bottom' as const } },
+})
+
+const barOptions = ref({
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: {
+      position: 'bottom' as const,
+      labels: { color: '#cbd5e1' },
+    },
+  },
+  scales: {
+    y: { beginAtZero: true, grid: { color: '#334155' }, ticks: { color: '#94a3b8', stepSize: 1 } },
+    x: { grid: { display: false }, ticks: { color: '#94a3b8' } },
+  },
 })
 
 // Utilitaire de formatage monétaire

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { fileUploadService } from '@/services/fileUploadService' // Ajout de l'import pour l'upload d'images
+import { fileUploadService } from '@/services/fileUploadService'
 import { commandeService } from '@/services/commandeService'
 import { clientService } from '@/services/clientService'
+// Assure-toi que le composant Modal existe bien à cet emplacement
 import Modal from '@/components/Modal.vue'
 import { paiementService } from '@/services/paiementService'
-// Assure-toi que ces types correspondent à ce qui est dans ton fichier commandeInterface.ts
-import type { Commande } from '@/types/commandeInterface'
+
+// Types (Assure-toi de les avoir définis dans tes interfaces)
+import type { Commande, CommandeRequest, LigneCommandeRequest } from '@/types/commandeInterface'
 import type { ClientResponseDTO } from '@/types/clientInterface'
 
 // --- GESTION DE LA VISIONNEUSE D'IMAGES (LIGHTBOX) ---
@@ -14,27 +16,24 @@ const isImageViewerOpen = ref(false)
 const currentImageUrl = ref('')
 const zoomLevel = ref(1)
 
-// Ouvre la visionneuse avec l'URL cliquée
 const openImageViewer = (url: string) => {
   currentImageUrl.value = url
-  zoomLevel.value = 1 // On remet le zoom à 100% par défaut
+  zoomLevel.value = 1
   isImageViewerOpen.value = true
 }
 
-// Ferme la visionneuse
 const closeImageViewer = () => {
   isImageViewerOpen.value = false
   currentImageUrl.value = ''
   zoomLevel.value = 1
 }
 
-// Contrôles de zoom
 const zoomIn = () => {
-  if (zoomLevel.value < 3) zoomLevel.value += 0.25 // Zoom maximum (300%)
+  if (zoomLevel.value < 3) zoomLevel.value += 0.25
 }
 
 const zoomOut = () => {
-  if (zoomLevel.value > 0.5) zoomLevel.value -= 0.25 // Zoom minimum (50%)
+  if (zoomLevel.value > 0.5) zoomLevel.value -= 0.25
 }
 
 const resetZoom = () => {
@@ -43,7 +42,7 @@ const resetZoom = () => {
 
 // --- GESTION DES PAIEMENTS ---
 const isPaiementLoading = ref(false)
-const isAjoutPaiementVisible = ref(false) // Permet d'afficher/masquer le formulaire
+const isAjoutPaiementVisible = ref(false)
 
 const paiementForm = ref({
   montant: 0,
@@ -51,7 +50,6 @@ const paiementForm = ref({
   referenceTransaction: '',
 })
 
-// Prépare le formulaire avec le montant exact restant à payer
 const preparerNouveauPaiement = () => {
   paiementForm.value = {
     montant: selectedCommande.value?.resteAPayer || 0,
@@ -61,7 +59,6 @@ const preparerNouveauPaiement = () => {
   isAjoutPaiementVisible.value = true
 }
 
-// Soumet le paiement au backend
 const soumettrePaiement = async () => {
   if (!selectedCommande.value || !paiementForm.value.montant || paiementForm.value.montant <= 0) {
     alert('Veuillez saisir un montant valide.')
@@ -76,12 +73,10 @@ const soumettrePaiement = async () => {
   isPaiementLoading.value = true
   try {
     await paiementService.ajouterPaiement(selectedCommande.value.id, paiementForm.value)
-
-    // Une fois réussi, on recharge la page pour avoir les nouvelles données
     alert('Paiement enregistré avec succès !')
     isAjoutPaiementVisible.value = false
-    isViewModalOpen.value = false // On ferme le modal
-    chargerCommandes(currentPage.value) // On rafraîchit la liste
+    isViewModalOpen.value = false
+    chargerCommandes(currentPage.value)
   } catch (error) {
     console.error("Erreur lors de l'enregistrement du paiement", error)
     alert("Impossible d'enregistrer le paiement.")
@@ -92,64 +87,56 @@ const soumettrePaiement = async () => {
 
 // --- VARIABLES D'ÉTAT ---
 const commandes = ref<Commande[]>([])
-const clientsList = ref<ClientResponseDTO[]>([]) // Stocke les clients pour le select
+const clientsList = ref<ClientResponseDTO[]>([])
 const isLoading = ref(false)
 const currentPage = ref(0)
 const totalPages = ref(0)
 const totalElements = ref(0)
 
-// Variables liées aux filtres (v-model)
 const searchQuery = ref('')
 const selectedStatut = ref('')
 
 // --- GESTION DES MODAUX ---
 const isModalOpen = ref(false)
-const isViewModalOpen = ref(false) // Pour le modal de consultation
+const isViewModalOpen = ref(false)
 const isSubmitting = ref(false)
 
 const isEditMode = ref(false)
 const currentCommandeId = ref<number | null>(null)
 const selectedCommande = ref<Commande | null>(null)
-
-// Modèle d'une ligne dans le formulaire
-const ligneParDefaut = () => ({
-  nomMaquette: '',
-  quantite: 1,
-  prixConfection: 0,
-  fichiers: [] as File[], // Les vrais fichiers à uploader
-  previews: [] as string[], // Les URL locales pour afficher les miniatures
-  imagesUrl: [] as string[], // Les URL finales renvoyées par le backend
-})
-
-//--- GESTION DU STATUT DE COMMANDE----
 const statutInitial = ref<string>('')
 
-// Propriété qui calcule les statuts autorisés selon l'état de la commande
 const statutsDisponibles = computed(() => {
-  if (!isEditMode.value) return ['CREEE'] // En création, seul CREEE est possible
+  if (!isEditMode.value) return ['CREEE']
 
   const actuel = statutInitial.value
-
-  // L'annulation n'est désormais proposée que si on est au stade CREEE
   if (actuel === 'CREEE') return ['CREEE', 'EN_CONFECTION', 'ANNULEE']
-
-  // Pour les étapes suivantes, l'option d'annulation a disparu
   if (actuel === 'EN_CONFECTION') return ['EN_CONFECTION', 'ESSAYAGE']
   if (actuel === 'ESSAYAGE') return ['ESSAYAGE', 'TERMINEE']
-
   if (actuel === 'TERMINEE') return ['TERMINEE']
   if (actuel === 'ANNULEE') return ['ANNULEE']
 
   return [actuel]
 })
 
-// Modèle de données pour le formulaire (Création / Édition)
+// Modèle pour le formulaire UI
+// On utilise `any` pour les lignes afin de gérer les fichiers locaux (qui ne sont pas dans le DTO)
+const ligneParDefaut = () => ({
+  nomMaquette: '',
+  quantite: 1,
+  prixConfection: 0,
+  fichiers: [] as File[],
+  previews: [] as string[],
+  imagesUrl: [] as string[],
+})
+
 const commandeForm = ref({
   clientId: '' as number | '',
   dateLivraison: '',
-  lignes: [ligneParDefaut()],
+  lignes: [ligneParDefaut()] as any[],
   statut: 'CREEE',
-  resteAPayer: 0, // Pour l'affichage du reste à payer dans le modal de consultation
+  resteAPayer: 0,
+  coutTotal: 0,
 })
 
 // --- GESTION DYNAMIQUE DES LIGNES ET IMAGES ---
@@ -159,8 +146,10 @@ const ajouterLigne = () => {
 
 const supprimerLigne = (index: number) => {
   if (commandeForm.value.lignes.length > 1) {
-    // Libérer la mémoire des images de cette ligne avant de la supprimer
-    commandeForm.value.lignes[index].previews.forEach((preview) => URL.revokeObjectURL(preview))
+    const ligne = commandeForm.value.lignes[index]
+    if (ligne && ligne.previews) {
+      ligne.previews.forEach((preview: string) => URL.revokeObjectURL(preview))
+    }
     commandeForm.value.lignes.splice(index, 1)
   }
 }
@@ -172,30 +161,29 @@ const gererSelectionImages = (event: Event, indexLigne: number) => {
   const nouveauxFichiers = Array.from(input.files)
   const ligne = commandeForm.value.lignes[indexLigne]
 
-  // Vérification : Pas plus de 5 images au total (fichiers locaux + images déjà sur le serveur)
   if (ligne.fichiers.length + ligne.imagesUrl.length + nouveauxFichiers.length > 5) {
     alert('Vous ne pouvez pas associer plus de 5 images par article.')
-    input.value = '' // Réinitialise l'input
+    input.value = ''
     return
   }
 
-  // Ajout des fichiers et création des aperçus locaux (miniatures)
   for (const fichier of nouveauxFichiers) {
     ligne.fichiers.push(fichier)
     ligne.previews.push(URL.createObjectURL(fichier))
   }
 
-  input.value = '' // Permet de re-sélectionner le même fichier si besoin
+  input.value = ''
 }
 
 const supprimerImageLocale = (indexLigne: number, indexImage: number) => {
   const ligne = commandeForm.value.lignes[indexLigne]
-  URL.revokeObjectURL(ligne.previews[indexImage]) // Libérer la mémoire
+  if (ligne && ligne.previews && ligne.previews[indexImage]) {
+    URL.revokeObjectURL(ligne.previews[indexImage])
+  }
   ligne.fichiers.splice(indexImage, 1)
   ligne.previews.splice(indexImage, 1)
 }
 
-// Calcul automatique du total pour l'affichage UI
 const totalEstime = computed(() => {
   return commandeForm.value.lignes.reduce((total, ligne) => {
     return total + (ligne.quantite || 0) * (ligne.prixConfection || 0)
@@ -203,8 +191,6 @@ const totalEstime = computed(() => {
 })
 
 // --- LOGIQUE API ---
-
-// 1. Charger les commandes
 const chargerCommandes = async (page: number) => {
   isLoading.value = true
   try {
@@ -220,7 +206,6 @@ const chargerCommandes = async (page: number) => {
   }
 }
 
-// 2. Charger les clients pour le select du formulaire
 const chargerClientsPourSelect = async () => {
   try {
     const response = await clientService.getAllClients(0, 100)
@@ -230,22 +215,23 @@ const chargerClientsPourSelect = async () => {
   }
 }
 
-// ÉCOUTEUR : Si on change de statut dans le menu déroulant, on relance l'API (à la page 0)
 watch(selectedStatut, () => {
   chargerCommandes(0)
 })
 
 // --- ACTIONS SUR LES BOUTONS ---
-
 const ouvrirModalCreation = () => {
   isEditMode.value = false
   currentCommandeId.value = null
+  statutInitial.value = 'CREEE'
 
   commandeForm.value = {
     clientId: '',
     dateLivraison: '',
     lignes: [ligneParDefaut()],
     statut: 'CREEE',
+    resteAPayer: 0,
+    coutTotal: 0,
   }
   isModalOpen.value = true
 }
@@ -257,52 +243,35 @@ const ouvrirModalEdition = (commande: Commande) => {
 
   const dateFormatee = commande.dateLivraison ? commande.dateLivraison.slice(0, 10) : ''
 
-  // Préparation des lignes existantes pour l'édition
-  const lignesExistantes = (commande as any).lignes
-    ? JSON.parse(JSON.stringify((commande as any).lignes)).map((l: any) => ({
-        ...l,
-        fichiers: [], // Fichiers physiques (vide au départ)
-        previews: [], // Miniatures locales (vide au départ)
-        // On récupère les URLs des images déjà existantes
-        imagesUrl: l.imagesUrl || (l.images ? l.images.map((img: any) => img.url) : []),
-      }))
-    : [ligneParDefaut()]
+  const lignesExistantes =
+    commande.lignes && Array.isArray(commande.lignes)
+      ? JSON.parse(JSON.stringify(commande.lignes)).map((l: any) => ({
+          ...l,
+          fichiers: [] as File[],
+          previews: [] as string[],
+          imagesUrl: l.imagesUrl || (l.images ? l.images.map((img: any) => img.url) : []),
+        }))
+      : [ligneParDefaut()]
 
   commandeForm.value = {
-    clientId: commande.client ? commande.client.id : '',
+    clientId: commande.client?.id || '',
     dateLivraison: dateFormatee,
     lignes: lignesExistantes,
     statut: commande.statut,
-    coutTotal: commande.coutTotal,
-    resteAPayer: commande.resteAPayer !== undefined ? commande.resteAPayer : commande.coutTotal,
+    coutTotal: commande.coutTotal || 0,
+    resteAPayer:
+      commande.resteAPayer !== undefined ? commande.resteAPayer : commande.coutTotal || 0,
   }
   isModalOpen.value = true
 }
 
 const ouvrirModalDetails = (commande: Commande) => {
-  console.log("🧐 [DEBUG] Clic sur 'Voir' - Commande complète :", commande)
-
-  if (commande.lignes && commande.lignes.length > 0) {
-    commande.lignes.forEach((ligne, index) => {
-      console.log(`🧐 [DEBUG] Ligne n°${index + 1} - nomMaquette :`, ligne.nomMaquette)
-      console.log(
-        `🧐 [DEBUG] Ligne n°${index + 1} - imagesUrl (Type: ${typeof ligne.imagesUrl}) :`,
-        ligne.imagesUrl,
-      )
-    })
-  } else {
-    console.warn(
-      "⚠️ [DEBUG] Le backend n'a renvoyé aucune ligne pour cette commande, ou le tableau 'lignes' est vide.",
-    )
-  }
-
   selectedCommande.value = commande
   isViewModalOpen.value = true
 }
 
 // --- SOUMISSION DU FORMULAIRE ---
 const soumettreCommande = async () => {
-  // 1. VALIDATION FRONTEND : Vérifier que chaque ligne a au moins 1 image
   const ligneInvalide = commandeForm.value.lignes.find(
     (l) => l.fichiers.length === 0 && l.imagesUrl.length === 0,
   )
@@ -313,27 +282,35 @@ const soumettreCommande = async () => {
 
   isSubmitting.value = true
   try {
-    // 2. UPLOAD DES IMAGES LIGNE PAR LIGNE
     for (const ligne of commandeForm.value.lignes) {
       if (ligne.fichiers.length > 0) {
-        // 👈 APPEL AU NOUVEAU SERVICE ICI
         const responseUpload = await fileUploadService.uploadImages(ligne.fichiers)
-
-        // On ajoute les nouvelles URLs reçues du backend aux URLs existantes
         ligne.imagesUrl = [...ligne.imagesUrl, ...responseUpload.data]
-
-        // On vide les fichiers locaux et les miniatures pour libérer la mémoire
         ligne.fichiers = []
-        ligne.previews.forEach((url) => URL.revokeObjectURL(url))
+        if (ligne.previews) {
+          ligne.previews.forEach((url: string) => URL.revokeObjectURL(url))
+        }
         ligne.previews = []
       }
     }
 
-    // 3. ENVOI DE LA COMMANDE JSON GLOBALE
+    // MAPPER POUR LE BACKEND
+    const payload: CommandeRequest = {
+      clientId: Number(commandeForm.value.clientId),
+      dateLivraison: commandeForm.value.dateLivraison,
+      statut: commandeForm.value.statut,
+      lignes: commandeForm.value.lignes.map((ligne: any) => ({
+        nomMaquette: ligne.nomMaquette,
+        quantite: ligne.quantite,
+        prixConfection: ligne.prixConfection,
+        imageUrlMaquette: ligne.imagesUrl && ligne.imagesUrl.length > 0 ? ligne.imagesUrl[0] : '',
+      })),
+    }
+
     if (isEditMode.value && currentCommandeId.value) {
-      await commandeService.updateCommande(currentCommandeId.value, commandeForm.value)
+      await commandeService.updateCommande(currentCommandeId.value, payload)
     } else {
-      await commandeService.creerCommande(commandeForm.value)
+      await commandeService.creerCommande(payload)
     }
 
     isModalOpen.value = false
@@ -345,7 +322,7 @@ const soumettreCommande = async () => {
   }
 }
 
-// --- FILTRE LOCAL (Barre de recherche) ---
+// --- FILTRE LOCAL ---
 const commandesAffichees = computed(() => {
   if (!searchQuery.value) return commandes.value
   const query = searchQuery.value.toLowerCase()
@@ -353,7 +330,7 @@ const commandesAffichees = computed(() => {
 })
 
 // --- UTILITAIRES D'AFFICHAGE ---
-const formatDate = (dateString: string) => {
+const formatDate = (dateString: string | undefined) => {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleDateString('fr-FR', {
     day: '2-digit',
@@ -379,45 +356,29 @@ const getBadgeClass = (statut: string) => {
   }
 }
 
-// Fonction pour générer l'URL complète de l'image
 const getImageUrl = (cheminRelatif: any) => {
-  console.log('🔍 [DEBUG] getImageUrl appelé avec la valeur :', cheminRelatif)
+  if (!cheminRelatif) return ''
 
-  if (!cheminRelatif) {
-    console.log("❌ [DEBUG] L'URL est vide ou null.")
-    return ''
-  }
-
-  // ⚠️ Erreur très fréquente : le backend renvoie un objet (ex: { id: 1, url: "/uploads/..." })
-  // au lieu d'une simple chaîne de caractères ("/uploads/...")
   if (typeof cheminRelatif === 'object') {
-    console.error('❌ [DEBUG] Attention, cheminRelatif est un OBJET, pas un texte !', cheminRelatif)
-    // On tente de récupérer la propriété url si elle existe
     cheminRelatif = cheminRelatif.url || cheminRelatif.imageUrl || ''
   }
 
   if (typeof cheminRelatif === 'string' && cheminRelatif.startsWith('http')) {
-    console.log("✅ [DEBUG] C'est déjà une URL absolue :", cheminRelatif)
     return cheminRelatif
   }
 
   const baseUrl = 'http://localhost:8088'
-  // On s'assure qu'il y a bien un "/" entre la baseUrl et le chemin
   const slash = cheminRelatif.startsWith('/') ? '' : '/'
-  const finalUrl = `${baseUrl}${slash}${cheminRelatif}`
-
-  console.log('✅ [DEBUG] URL finale envoyée à la balise <img> :', finalUrl)
-  return finalUrl
+  return `${baseUrl}${slash}${cheminRelatif}`
 }
 
-// Extrait les images de la ligne, peu importe comment le backend les nomme
 const getImagesLigne = (ligne: any): string[] => {
+  if (!ligne) return []
   const urls = ligne.imagesUrl || ligne.imageUrlMaquette
   if (!urls) return []
   return Array.isArray(urls) ? urls : [urls]
 }
 
-// Initialisation
 onMounted(() => {
   chargerCommandes(0)
   chargerClientsPourSelect()

@@ -197,8 +197,11 @@ const ouvrirModalFiches = async (client: any) => {
     historiqueFiches.value = response.data
 
     if (historiqueFiches.value.length > 0) {
-      // On sélectionne la fiche la plus récente
-      selectionnerFiche(historiqueFiches.value[0])
+      // 👈 CORRECTION ICI : Extraction propre pour satisfaire le compilateur TypeScript
+      const premiereFiche = historiqueFiches.value[0]
+      if (premiereFiche) {
+        selectionnerFiche(premiereFiche)
+      }
     } else {
       // Si aucune fiche, on passe directement en mode création
       preparerNouvelleFiche()
