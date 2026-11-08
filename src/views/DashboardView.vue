@@ -73,7 +73,7 @@ const doughnutData = computed(() => ({
 // --- APRÈS (La version intelligente) ---
 const doughnutData = computed(() => {
   const donnees = (dashboardStore.repartitionStatut ?? [0, 0, 0, 0]) as number[]
-  const totalCommandes = donnees.reduce((a, b) => a + b, 0)
+  const totalCommandes = donnees.reduce((a: number, b: number) => a + b, 0) ?? 0
 
   // Si le total est 0, on affiche un disque gris (vide)
   if (totalCommandes === 0) {
@@ -142,7 +142,7 @@ const lineTraiteesData = computed(() => {
       // tu peux décommenter la condition ci-dessous :
       // if (cmd.statut === 'TERMINEE') {
 
-      donneesHebdo[index]++
+      donneesHebdo[index] = (donneesHebdo[index] ?? 0) + 1
 
       // }
     }
@@ -215,7 +215,7 @@ const barSixMoisData = computed(() => {
     // Si la commande est bien dans la fenêtre des 6 derniers mois
     if (diffMois >= 0 && diffMois <= 5) {
       const index = 5 - diffMois // Le mois actuel est toujours à la fin du tableau (index 5)
-      totauxMensuels[index]++
+      totauxMensuels[index] = (totauxMensuels[index] ?? 0) + 1
     }
   })
 
