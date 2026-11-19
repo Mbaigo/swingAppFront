@@ -1,15 +1,53 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
-import { fileUploadService } from '@/services/fileUploadService'
-import { commandeService } from '@/services/commandeService'
-import { clientService } from '@/services/clientService'
-// Assure-toi que le composant Modal existe bien à cet emplacement
+import { storeToRefs } from 'pinia'
 import Modal from '@/components/Modal.vue'
-import { paiementService } from '@/services/paiementService'
+import { useCommandeStore } from '@/stores/commandeStore'
+import type { Commande, CommandeRequest } from '@/types/commandeInterface'
+import type { ModeOuverturePdf } from '@/services/factureService'
 
-// Types (Assure-toi de les avoir définis dans tes interfaces)
-import type { Commande, CommandeRequest, LigneCommandeRequest } from '@/types/commandeInterface'
-import type { ClientResponseDTO } from '@/types/clientInterface'
+interface LigneCommandeForm {
+  nomMaquette: string
+  quantite: number
+  prixConfection: number
+  fichiers: File[]
+  previews: string[]
+  imagesUrl: string[]
+}
+
+// --- STORE PINIA ---
+const commandeStore = useCommandeStore()
+const {
+  commandes,
+  clientsList,
+  selectedCommande,
+  currentPage,
+  totalPages,
+  totalElements,
+  searchQuery,
+  selectedStatut,
+  isLoading,
+  isSubmitting,
+  isPaiementLoading,
+  loadingFactureId,
+  commandesAffichees,
+} = storeToRefs(commandeStore)
+
+const chargerCommandes = (page = 0) => commandeStore.chargerCommandes(page)
+
+// --- GESTION DE FACTURE ---
+const ouvrirFacture = async (
+  commandeId: number,
+  aDejaNumeroFacture: boolean,
+  mode: ModeOuverturePdf = 'download',
+) => {
+  try {
+    await commandeStore.ouvrirFacture(commandeId, aDejaNumeroFacture, mode)
+  } catch (error) {
+    console.error('Erreur lors de la récupération de la facture PDF :', error)
+    alert('Impossible de générer la facture PDF.')
+  }
+}
 
 // --- GESTION DE LA VISIONNEUSE D'IMAGES (LIGHTBOX) ---
 const isImageViewerOpen = ref(false)
@@ -40,8 +78,7 @@ const resetZoom = () => {
   zoomLevel.value = 1
 }
 
-// --- GESTION DES PAIEMENTS ---
-const isPaiementLoading = ref(false)
+// --- GESTION DES PAIEMENTS (UI FORMULAIRE) ---
 const isAjoutPaiementVisible = ref(false)
 
 const paiementForm = ref({
@@ -70,40 +107,22 @@ const soumettrePaiement = async () => {
     return
   }
 
-  isPaiementLoading.value = true
   try {
-    await paiementService.ajouterPaiement(selectedCommande.value.id, paiementForm.value)
+    await commandeStore.ajouterPaiement(selectedCommande.value.id, paiementForm.value)
     alert('Paiement enregistré avec succès !')
     isAjoutPaiementVisible.value = false
     isViewModalOpen.value = false
-    chargerCommandes(currentPage.value)
   } catch (error) {
     console.error("Erreur lors de l'enregistrement du paiement", error)
     alert("Impossible d'enregistrer le paiement.")
-  } finally {
-    isPaiementLoading.value = false
   }
 }
 
-// --- VARIABLES D'ÉTAT ---
-const commandes = ref<Commande[]>([])
-const clientsList = ref<ClientResponseDTO[]>([])
-const isLoading = ref(false)
-const currentPage = ref(0)
-const totalPages = ref(0)
-const totalElements = ref(0)
-
-const searchQuery = ref('')
-const selectedStatut = ref('')
-
-// --- GESTION DES MODAUX ---
+// --- GESTION DES MODAUX & FORMULAIRE COMMANDE ---
 const isModalOpen = ref(false)
 const isViewModalOpen = ref(false)
-const isSubmitting = ref(false)
-
 const isEditMode = ref(false)
 const currentCommandeId = ref<number | null>(null)
-const selectedCommande = ref<Commande | null>(null)
 const statutInitial = ref<string>('')
 
 const statutsDisponibles = computed(() => {
@@ -119,21 +138,19 @@ const statutsDisponibles = computed(() => {
   return [actuel]
 })
 
-// Modèle pour le formulaire UI
-// On utilise `any` pour les lignes afin de gérer les fichiers locaux (qui ne sont pas dans le DTO)
-const ligneParDefaut = () => ({
+const ligneParDefaut = (): LigneCommandeForm => ({
   nomMaquette: '',
   quantite: 1,
   prixConfection: 0,
-  fichiers: [] as File[],
-  previews: [] as string[],
-  imagesUrl: [] as string[],
+  fichiers: [],
+  previews: [],
+  imagesUrl: [],
 })
 
 const commandeForm = ref({
   clientId: '' as number | '',
   dateLivraison: '',
-  lignes: [ligneParDefaut()] as any[],
+  lignes: [ligneParDefaut()] as LigneCommandeForm[],
   statut: 'CREEE',
   resteAPayer: 0,
   coutTotal: 0,
@@ -147,19 +164,19 @@ const ajouterLigne = () => {
 const supprimerLigne = (index: number) => {
   if (commandeForm.value.lignes.length > 1) {
     const ligne = commandeForm.value.lignes[index]
-    if (ligne && ligne.previews) {
-      ligne.previews.forEach((preview: string) => URL.revokeObjectURL(preview))
+    if (ligne) {
+      ligne.previews.forEach((preview) => URL.revokeObjectURL(preview))
+      commandeForm.value.lignes.splice(index, 1)
     }
-    commandeForm.value.lignes.splice(index, 1)
   }
 }
 
 const gererSelectionImages = (event: Event, indexLigne: number) => {
   const input = event.target as HTMLInputElement
-  if (!input.files) return
+  const ligne = commandeForm.value.lignes[indexLigne]
+  if (!input.files || !ligne) return
 
   const nouveauxFichiers = Array.from(input.files)
-  const ligne = commandeForm.value.lignes[indexLigne]
 
   if (ligne.fichiers.length + ligne.imagesUrl.length + nouveauxFichiers.length > 5) {
     alert('Vous ne pouvez pas associer plus de 5 images par article.')
@@ -177,8 +194,11 @@ const gererSelectionImages = (event: Event, indexLigne: number) => {
 
 const supprimerImageLocale = (indexLigne: number, indexImage: number) => {
   const ligne = commandeForm.value.lignes[indexLigne]
-  if (ligne && ligne.previews && ligne.previews[indexImage]) {
-    URL.revokeObjectURL(ligne.previews[indexImage])
+  if (!ligne) return
+
+  const preview = ligne.previews[indexImage]
+  if (preview) {
+    URL.revokeObjectURL(preview)
   }
   ligne.fichiers.splice(indexImage, 1)
   ligne.previews.splice(indexImage, 1)
@@ -190,36 +210,11 @@ const totalEstime = computed(() => {
   }, 0)
 })
 
-// --- LOGIQUE API ---
-const chargerCommandes = async (page: number) => {
-  isLoading.value = true
-  try {
-    const response = await commandeService.getCommandesFiltrees(page, 10, selectedStatut.value)
-    commandes.value = response.data.content
-    totalPages.value = response.data.totalPages
-    totalElements.value = response.data.totalElements
-    currentPage.value = response.data.number
-  } catch (error) {
-    console.error('Erreur de chargement des commandes', error)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const chargerClientsPourSelect = async () => {
-  try {
-    const response = await clientService.getAllClients(0, 100)
-    clientsList.value = response.data.content
-  } catch (error) {
-    console.error('Erreur de chargement des clients', error)
-  }
-}
-
 watch(selectedStatut, () => {
-  chargerCommandes(0)
+  commandeStore.chargerCommandes(0)
 })
 
-// --- ACTIONS SUR LES BOUTONS ---
+// --- ACTIONS SUR LES MODAUX ---
 const ouvrirModalCreation = () => {
   isEditMode.value = false
   currentCommandeId.value = null
@@ -243,7 +238,7 @@ const ouvrirModalEdition = (commande: Commande) => {
 
   const dateFormatee = commande.dateLivraison ? commande.dateLivraison.slice(0, 10) : ''
 
-  const lignesExistantes =
+  const lignesExistantes: LigneCommandeForm[] =
     commande.lignes && Array.isArray(commande.lignes)
       ? JSON.parse(JSON.stringify(commande.lignes)).map((l: any) => ({
           ...l,
@@ -254,7 +249,7 @@ const ouvrirModalEdition = (commande: Commande) => {
       : [ligneParDefaut()]
 
   commandeForm.value = {
-    clientId: commande.client?.id || '',
+    clientId: commande.client?.id ?? '',
     dateLivraison: dateFormatee,
     lignes: lignesExistantes,
     statut: commande.statut,
@@ -266,7 +261,8 @@ const ouvrirModalEdition = (commande: Commande) => {
 }
 
 const ouvrirModalDetails = (commande: Commande) => {
-  selectedCommande.value = commande
+  commandeStore.selectionnerCommande(commande)
+  isAjoutPaiementVisible.value = false
   isViewModalOpen.value = true
 }
 
@@ -280,56 +276,39 @@ const soumettreCommande = async () => {
     return
   }
 
-  isSubmitting.value = true
   try {
     for (const ligne of commandeForm.value.lignes) {
       if (ligne.fichiers.length > 0) {
-        const responseUpload = await fileUploadService.uploadImages(ligne.fichiers)
-        ligne.imagesUrl = [...ligne.imagesUrl, ...responseUpload.data]
+        const urlsUploadees = await commandeStore.uploaderImages(ligne.fichiers)
+        ligne.imagesUrl = [...ligne.imagesUrl, ...urlsUploadees]
         ligne.fichiers = []
-        if (ligne.previews) {
-          ligne.previews.forEach((url: string) => URL.revokeObjectURL(url))
-        }
+        ligne.previews.forEach((url) => URL.revokeObjectURL(url))
         ligne.previews = []
       }
     }
 
-    // MAPPER POUR LE BACKEND
-    // MAPPER POUR LE BACKEND
     const payload: CommandeRequest = {
       clientId: Number(commandeForm.value.clientId),
       dateLivraison: commandeForm.value.dateLivraison,
-      // Forcer le type pour rassurer le compilateur :
-      statut: commandeForm.value.statut as any,
-      lignes: commandeForm.value.lignes.map((ligne: any) => ({
+      statut: commandeForm.value.statut as CommandeRequest['statut'],
+      lignes: commandeForm.value.lignes.map((ligne) => ({
         nomMaquette: ligne.nomMaquette,
-        quantite: Number(ligne.quantite), // <-- Ligne 705 potentielle : forcer le type Number
+        quantite: Number(ligne.quantite),
         prixConfection: Number(ligne.prixConfection),
-        imageUrlMaquette: ligne.imagesUrl && ligne.imagesUrl.length > 0 ? ligne.imagesUrl[0] : '',
+        imageUrlMaquette: ligne.imagesUrl[0] ?? '',
       })),
     }
 
-    if (isEditMode.value && currentCommandeId.value) {
-      await commandeService.updateCommande(currentCommandeId.value, payload)
-    } else {
-      await commandeService.creerCommande(payload)
-    }
-
+    await commandeStore.sauvegarderCommande(
+      payload,
+      isEditMode.value ? currentCommandeId.value : null,
+    )
     isModalOpen.value = false
-    chargerCommandes(currentPage.value)
   } catch (error) {
     console.error('Erreur lors de la sauvegarde', error)
-  } finally {
-    isSubmitting.value = false
+    alert('Impossible de sauvegarder la commande.')
   }
 }
-
-// --- FILTRE LOCAL ---
-const commandesAffichees = computed(() => {
-  if (!searchQuery.value) return commandes.value
-  const query = searchQuery.value.toLowerCase()
-  return commandes.value.filter((commande) => commande.id.toString().includes(query))
-})
 
 // --- UTILITAIRES D'AFFICHAGE ---
 const formatDate = (dateString: string | undefined) => {
@@ -382,8 +361,8 @@ const getImagesLigne = (ligne: any): string[] => {
 }
 
 onMounted(() => {
-  chargerCommandes(0)
-  chargerClientsPourSelect()
+  commandeStore.chargerCommandes(0)
+  commandeStore.chargerClientsPourSelect()
 })
 </script>
 
@@ -780,8 +759,16 @@ onMounted(() => {
         <!-- En-tête de la commande -->
         <div class="flex items-center justify-between border-b border-slate-700 pb-4">
           <div>
-            <h3 class="text-2xl font-bold text-white">Commande #{{ selectedCommande.id }}</h3>
-            <p class="text-slate-400 text-sm">
+            <div class="flex items-center gap-3 flex-wrap">
+              <h3 class="text-2xl font-bold text-white">Commande #{{ selectedCommande.id }}</h3>
+              <span
+                v-if="selectedCommande.numeroFacture"
+                class="text-xs font-mono bg-emerald-900/50 text-emerald-300 border border-emerald-700/70 px-2.5 py-0.5 rounded-md"
+              >
+                {{ selectedCommande.numeroFacture }}
+              </span>
+            </div>
+            <p class="text-slate-400 text-sm mt-1">
               Enregistrée le
               {{ formatDate(selectedCommande.dateCommande) }}
             </p>
@@ -864,14 +851,12 @@ onMounted(() => {
                       ligne?.nomMaquette || 'Sans nom'
                     }}</span>
 
-                    <!-- 🚀 ON UTILISE NOTRE NOUVELLE FONCTION ICI -->
                     <div v-if="getImagesLigne(ligne).length > 0" class="flex flex-wrap gap-2 mt-2">
                       <div
                         v-for="(url, imgIdx) in getImagesLigne(ligne)"
                         :key="imgIdx"
                         class="relative group cursor-zoom-in"
                       >
-                        <!-- On utilise notre fonction openImageViewer -->
                         <img
                           :src="getImageUrl(url)"
                           alt="Maquette"
@@ -1077,12 +1062,102 @@ onMounted(() => {
       </div>
 
       <template #footer>
-        <button
-          @click="isViewModalOpen = false"
-          class="px-4 py-2 text-sm font-medium text-white bg-slate-700 border border-slate-600 rounded-lg hover:bg-slate-600 transition-colors w-full sm:w-auto"
-        >
-          Fermer le dossier
-        </button>
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 w-full">
+          <!-- Actions Facture PDF -->
+          <div v-if="selectedCommande" class="flex items-center gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              :disabled="loadingFactureId === selectedCommande.id"
+              @click="
+                ouvrirFacture(
+                  Number(selectedCommande.id),
+                  Boolean(selectedCommande.numeroFacture),
+                  'preview',
+                )
+              "
+              class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-slate-200 bg-slate-800 border border-slate-600 rounded-lg hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              title="Ouvrir l'aperçu PDF dans un nouvel onglet"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                />
+              </svg>
+              <span>Aperçu</span>
+            </button>
+
+            <button
+              type="button"
+              :disabled="loadingFactureId === selectedCommande.id"
+              @click="
+                ouvrirFacture(
+                  Number(selectedCommande.id),
+                  Boolean(selectedCommande.numeroFacture),
+                  'download',
+                )
+              "
+              class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg disabled:opacity-50 transition-colors"
+            >
+              <svg
+                v-if="loadingFactureId === selectedCommande.id"
+                class="animate-spin h-4 w-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              <svg
+                v-else
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              <span>{{
+                loadingFactureId === selectedCommande.id ? 'Génération...' : 'Télécharger facture'
+              }}</span>
+            </button>
+          </div>
+
+          <button
+            @click="isViewModalOpen = false"
+            class="px-4 py-2 text-sm font-medium text-white bg-slate-700 border border-slate-600 rounded-lg hover:bg-slate-600 transition-colors w-full sm:w-auto"
+          >
+            Fermer le dossier
+          </button>
+        </div>
       </template>
     </Modal>
   </div>

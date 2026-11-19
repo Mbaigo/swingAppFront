@@ -79,4 +79,7 @@ export interface Commande {
   montantPaye?: number
   resteAPayer?: number
   paiements?: Paiement[] // Historique des paiements de cette commande
+
+  numeroFacture?: string | null
+  dateFacturation?: string | null
 }
