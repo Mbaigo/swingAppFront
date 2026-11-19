@@ -18,7 +18,7 @@ interface LigneCommandeForm {
 // --- STORE PINIA ---
 const commandeStore = useCommandeStore()
 const {
-  commandes,
+  //commandes,
   clientsList,
   selectedCommande,
   currentPage,
