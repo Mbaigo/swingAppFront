@@ -295,7 +295,7 @@ const soumettreCommande = async () => {
         nomMaquette: ligne.nomMaquette,
         quantite: Number(ligne.quantite),
         prixConfection: Number(ligne.prixConfection),
-        imageUrlMaquette: ligne.imagesUrl[0] ?? '',
+        imageUrlMaquette: ligne.imagesUrl ?? [],
       })),
     }
 
